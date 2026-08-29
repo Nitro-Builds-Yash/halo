@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "halo"
+version = "0.1.0"
+description = "Agentic Corrective RAG (CRAG) system"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain-core",
+    "langchain-openai",
+    "langgraph",
+    "chromadb",
+    "langchain-chroma",
+    "tavily-python",
+    "pydantic>=2.0",
+    "pydantic-settings",
+    "fastapi",
+    "uvicorn",
+    "sse-starlette",
+    "tiktoken",
+    "duckduckgo-search",
+    "pdfplumber",
+    "unstructured"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "httpx"
+]
