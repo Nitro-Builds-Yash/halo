@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 460">
+  <style>
+    :root {
+      --panel: #f6f8fa; --panel-2: #ffffff; --ink: #0d1117; --muted: #57606a;
+      --line: #d0d7de; --accent: #0969da; --accent-soft: #ddf4ff; --good: #1a7f37; --warn: #bf8700; --warn-soft: #fff8c5;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --panel: #0d1117; --panel-2: #161b22; --ink: #f0f6fc; --muted: #8b949e;
+        --line: #30363d; --accent: #58a6ff; --accent-soft: #0c2d4a; --good: #3fb950; --warn: #d29922; --warn-soft: #443300;
+      }
+    }
+    .sans { font-family: Geist, "Avenir Next", "Segoe UI", system-ui, sans-serif; }
+    .mono { font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace; }
+    
+    @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes flow { to { stroke-dashoffset: -40; } }
+    @keyframes pulse-ring { 0% { r: 8px; opacity: 0.65; stroke-width: 2px; } 72%, 100% { r: 18px; opacity: 0; stroke-width: 1px; } }
+    
+    .rise { animation: rise 0.7s cubic-bezier(.2,.7,.2,1) both; }
+    .n1 { animation-delay: 0.12s; }
+    .n2 { animation-delay: 0.3s; }
+    .n3 { animation-delay: 0.48s; }
+    .n4 { animation-delay: 0.7s; }
+    .flow { stroke-dasharray: 8 12; animation: flow 1.8s linear infinite; }
+    .pulse-ring { animation: pulse-ring 2.8s cubic-bezier(.2,.72,.2,1) infinite; }
+    
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; }
+    }
+  </style>
+
+  <rect width="100%" height="100%" rx="24" fill="var(--panel)" stroke="var(--line)" stroke-width="1"/>
+  
+  <text x="52" y="40" class="mono" font-size="14" fill="var(--muted)">AGENT PIPELINE · QUERY → VERIFIED ANSWER</text>
+  <text x="1148" y="40" class="mono" font-size="14" fill="var(--muted)" text-anchor="end">FIG. 01</text>
+  
+  <!-- Flow lines -->
+  <line x1="270" y1="162" x2="295" y2="162" stroke="var(--accent)" stroke-width="2" class="flow" marker-end="url(#arrow)"/>
+  <line x1="520" y1="162" x2="545" y2="162" stroke="var(--accent)" stroke-width="2" class="flow" marker-end="url(#arrow)"/>
+  <line x1="770" y1="162" x2="795" y2="162" stroke="var(--accent)" stroke-width="2" class="flow" marker-end="url(#arrow)"/>
+  <line x1="1020" y1="162" x2="1045" y2="162" stroke="var(--accent)" stroke-width="2" class="flow" marker-end="url(#arrow)"/>
+
+  <!-- Feedback line -->
+  <path d="M 661 264 Q 661 320 400 320 T 161 264" fill="none" stroke="var(--warn)" stroke-width="2" stroke-dasharray="6" class="flow" marker-end="url(#arrow-warn)"/>
+  <rect x="300" y="306" width="200" height="28" rx="14" fill="var(--panel)" stroke="var(--warn)"/>
+  <text x="400" y="325" class="mono" font-size="12" fill="var(--warn)" text-anchor="middle">LOW RELEVANCE → re-query</text>
+  
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent)"/>
+    </marker>
+    <marker id="arrow-warn" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--warn)"/>
+    </marker>
+  </defs>
+
+  <!-- Cards -->
+  <!-- Card 1 -->
+  <g class="rise n1" transform="translate(52, 60)">
+    <rect width="218" height="204" rx="16" fill="var(--panel-2)" stroke="var(--line)"/>
+    <rect x="16" y="16" width="80" height="24" rx="12" fill="var(--accent-soft)"/>
+    <text x="56" y="32" class="mono" font-size="12" fill="var(--accent)" text-anchor="middle">ANALYZE</text>
+    <text x="16" y="70" class="sans" font-size="22" font-weight="bold" fill="var(--ink)">Query</text>
+    <text x="16" y="96" class="sans" font-size="22" font-weight="bold" fill="var(--ink)">Analyzer</text>
+    <text x="16" y="140" class="mono" font-size="12" fill="var(--muted)">intent classification</text>
+    <text x="16" y="160" class="mono" font-size="12" fill="var(--muted)">query expansion</text>
+  </g>
+
+  <!-- Card 2 -->
+  <g class="rise n2" transform="translate(302, 60)">
+    <rect width="218" height="204" rx="16" fill="var(--panel-2)" stroke="var(--line)"/>
+    <rect x="16" y="16" width="90" height="24" rx="12" fill="var(--accent-soft)"/>
+    <text x="61" y="32" class="mono" font-size="12" fill="var(--accent)" text-anchor="middle">RETRIEVE</text>
+    <text x="16" y="70" class="sans" font-size="22" font-weight="bold" fill="var(--ink)">Hybrid</text>
+    <text x="16" y="96" class="sans" font-size="22" font-weight="bold" fill="var(--ink)">Retriever</text>
+    <text x="16" y="140" class="mono" font-size="12" fill="var(--muted)">BM25 + vector</text>
+    <text x="16" y="160" class="mono" font-size="12" fill="var(--muted)">RRF fusion</text>
+    <rect x="16" y="180" width="186" height="4" rx="2" fill="var(--line)"/>
+    <rect x="16" y="180" width="120" height="4" rx="2" fill="var(--accent)"/>
+  </g>
+
+  <!-- Card 3 -->
+  <g class="rise n3" transform="translate(552, 60)">
+    <rect width="218" height="204" rx="16" fill="var(--panel-2)" stroke="var(--line)"/>
+    <rect x="16" y="16" width="90" height="24" rx="12" fill="var(--accent-soft)"/>
+    <text x="61" y="32" class="mono" font-size="12" fill="var(--accent)" text-anchor="middle">EVALUATE</text>
+    <text x="16" y="70" class="sans" font-size="22" font-weight="bold" fill="var(--ink)">Relevance</text>
+    <text x="16" y="96" class="sans" font-size="22" font-weight="bold" fill="var(--ink)">Evaluator</text>
+    <text x="16" y="140" class="mono" font-size="12" fill="var(--muted)">score ≥ 60%</text>
+    <text x="16" y="160" class="mono" font-size="12" fill="var(--muted)">noise filter</text>
+  </g>
+
+  <!-- Card 4 -->
+  <g class="rise n4" transform="translate(802, 60)">
+    <rect width="218" height="204" rx="16" fill="var(--panel-2)" stroke="var(--line)"/>
+    <rect x="16" y="16" width="70" height="24" rx="12" fill="var(--warn-soft)"/>
+    <text x="51" y="32" class="mono" font-size="12" fill="var(--warn)" text-anchor="middle">GUARD</text>
+    <text x="16" y="70" class="sans" font-size="22" font-weight="bold" fill="var(--ink)">Faithfulness</text>
+    <text x="16" y="96" class="sans" font-size="22" font-weight="bold" fill="var(--ink)">Auditor</text>
+    <text x="16" y="140" class="mono" font-size="12" fill="var(--muted)">hallucination scan</text>
+    <text x="16" y="160" class="mono" font-size="12" fill="var(--muted)">citation extract</text>
+  </g>
+
+  <!-- Final box -->
+  <g class="rise n4" transform="translate(1052, 60)">
+    <rect width="120" height="204" rx="16" fill="var(--panel-2)" stroke="var(--good)"/>
+    <rect x="16" y="16" width="70" height="24" rx="12" fill="#d1e7dd"/>
+    <text x="51" y="32" class="mono" font-size="12" fill="var(--good)" text-anchor="middle">ANSWER</text>
+    <text x="16" y="70" class="sans" font-size="18" font-weight="bold" fill="var(--ink)">Quality</text>
+    <text x="16" y="92" class="sans" font-size="18" font-weight="bold" fill="var(--ink)">Graded</text>
+    
+    <circle cx="24" cy="120" r="4" fill="var(--good)"/>
+    <circle cx="24" cy="120" fill="none" stroke="var(--good)" class="pulse-ring"/>
+    
+    <text x="16" y="150" class="mono" font-size="10" fill="var(--muted)">completeness</text>
+    <text x="16" y="170" class="mono" font-size="10" fill="var(--muted)">tone scored</text>
+  </g>
+
+  <text x="600" y="420" class="mono" font-size="14" fill="var(--muted)" text-anchor="middle">QUALITY THRESHOLD NOT MET? → self-corrective retry with expanded query</text>
+</svg>

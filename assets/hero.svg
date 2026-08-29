@@ -1,77 +1,68 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 380" width="100%" height="100%">
-  <defs>
-    <linearGradient id="bgGradRag" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0a0d14"/>
-      <stop offset="50%" stop-color="#111827"/>
-      <stop offset="100%" stop-color="#050811"/>
-    </linearGradient>
-    <linearGradient id="accentGradRag" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#10b981"/>
-      <stop offset="50%" stop-color="#06b6d4"/>
-      <stop offset="100%" stop-color="#3b82f6"/>
-    </linearGradient>
-    <filter id="glowRag" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="8" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-  </defs>
-
-  <!-- Background -->
-  <rect width="1200" height="380" rx="16" fill="url(#bgGradRag)" stroke="#1e293b" stroke-width="2"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 540">
+  <style>
+    :root {
+      --panel: #f6f8fa; --panel-2: #ffffff; --ink: #0d1117; --muted: #57606a;
+      --line: #d0d7de; --accent: #0969da; --accent-soft: #ddf4ff; --good: #1a7f37;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --panel: #0d1117; --panel-2: #161b22; --ink: #f0f6fc; --muted: #8b949e;
+        --line: #30363d; --accent: #58a6ff; --accent-soft: #0c2d4a; --good: #3fb950;
+      }
+    }
+    .sans { font-family: Geist, "Avenir Next", "Segoe UI", system-ui, sans-serif; }
+    .mono { font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace; }
+    
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+    @keyframes halo { 0% { opacity: 0.34; transform: scale(0.88); } 72%, 100% { opacity: 0; transform: scale(1.18); } }
+    @keyframes brand { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+    @keyframes wave { to { stroke-dashoffset: -40; } }
+    @keyframes pulse-ring { 0% { r:8px; opacity:.65; stroke-width:2px; } 72%,100% { r:18px; opacity:0; stroke-width:1px; } }
+    @keyframes reveal { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    
+    .blink { animation: blink 2.4s ease-in-out infinite; }
+    .halo { animation: halo 3.4s cubic-bezier(.2,.72,.2,1) infinite; transform-origin: 880px 270px; }
+    .brand { animation: brand 5.2s infinite; }
+    .wave { stroke-dasharray: 8 12; animation: wave 2.1s linear infinite; }
+    
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; }
+    }
+  </style>
   
-  <!-- Subtle Grid Pattern -->
-  <g stroke="#334155" stroke-opacity="0.15" stroke-width="1">
-    <line x1="0" y1="60" x2="1200" y2="60"/>
-    <line x1="0" y1="120" x2="1200" y2="120"/>
-    <line x1="0" y1="180" x2="1200" y2="180"/>
-    <line x1="0" y1="240" x2="1200" y2="240"/>
-    <line x1="0" y1="300" x2="1200" y2="300"/>
-    <line x1="200" y1="0" x2="200" y2="380"/>
-    <line x1="400" y1="0" x2="400" y2="380"/>
-    <line x1="600" y1="0" x2="600" y2="380"/>
-    <line x1="800" y1="0" x2="800" y2="380"/>
-    <line x1="1000" y1="0" x2="1000" y2="380"/>
+  <rect width="100%" height="100%" rx="28" fill="var(--panel)" stroke="var(--line)" stroke-width="1"/>
+  
+  <line x1="0" y1="116" x2="1200" y2="116" stroke="var(--line)" stroke-width="1"/>
+  <line x1="0" y1="458" x2="1200" y2="458" stroke="var(--line)" stroke-width="1"/>
+  
+  <!-- Top bar -->
+  <circle cx="74" cy="64" r="6" fill="var(--good)" class="blink" />
+  <text x="96" y="69" class="mono" fill="var(--muted)" font-size="14">AGENTS ACTIVE</text>
+  <text x="1050" y="69" class="mono" fill="var(--muted)" font-size="14" text-anchor="end">SELF-CORRECTIVE RAG</text>
+  <rect x="1080" y="52" width="40" height="24" rx="12" fill="var(--accent-soft)"/>
+  <text x="1100" y="69" class="mono" fill="var(--accent)" font-size="14" text-anchor="middle">v1</text>
+  
+  <!-- Hero text -->
+  <text x="74" y="210" class="sans" font-weight="bold" font-size="70" fill="var(--ink)">halo</text>
+  <text x="74" y="272" class="sans" font-size="36" fill="var(--accent)">ask anything. retrieve truth.</text>
+  <text x="74" y="320" class="sans" font-size="24" fill="var(--muted)">A self-corrective agentic RAG pipeline with 4 AI quality gates.</text>
+  
+  <!-- Pill row -->
+  <g transform="translate(74, 374)">
+    <rect width="450" height="42" rx="21" fill="var(--panel-2)" stroke="var(--line)"/>
+    <text x="225" y="26" class="mono" font-size="14" fill="var(--ink)" text-anchor="middle">HYBRID RETRIEVAL · HALLUCINATION GUARD · MULTI-AGENT</text>
   </g>
-
-  <!-- Visual Wave / Agent Circuit Lines -->
-  <g transform="translate(600, 260)">
-    <path d="M-500,0 Q-350,-50 -200,0 T100,0 T400,0 T500,0" fill="none" stroke="url(#accentGradRag)" stroke-width="2.5" opacity="0.3"/>
-    <path d="M-400,0 Q-250,50 -100,0 Q50,-60 200,0 Q350,60 450,0" fill="none" stroke="url(#accentGradRag)" stroke-width="3" filter="url(#glowRag)"/>
+  
+  <!-- Right side visual -->
+  <circle cx="880" cy="270" r="132" fill="none" stroke="var(--accent)" stroke-width="2" class="halo"/>
+  <circle cx="880" cy="270" r="100" fill="var(--accent-soft)" opacity="0.2"/>
+  <g class="brand" transform="translate(880, 270)">
+    <rect x="-60" y="-60" width="120" height="120" rx="24" fill="var(--panel-2)" stroke="var(--accent)" stroke-width="2"/>
+    <text x="0" y="-5" class="sans" font-size="48" font-weight="bold" fill="var(--accent)" text-anchor="middle">4</text>
+    <text x="0" y="30" class="mono" font-size="16" fill="var(--accent)" text-anchor="middle">AGENTS</text>
   </g>
-
-  <!-- Left Icon Visual -->
-  <g transform="translate(80, 105)">
-    <rect width="80" height="80" rx="18" fill="#0f172a" stroke="#10b981" stroke-width="2"/>
-    <circle cx="40" cy="40" r="24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-dasharray="5 3"/>
-    <path d="M30,40 L37,47 L52,32" fill="none" stroke="#34d399" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
-  </g>
-
-  <!-- Header & Title -->
-  <g transform="translate(190, 110)">
-    <rect x="0" y="-35" width="250" height="26" rx="13" fill="#064e3b" stroke="#10b981" stroke-width="1.2"/>
-    <circle cx="14" cy="-22" r="5" fill="#34d399"/>
-    <text x="26" y="-18" fill="#34d399" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="700" letter-spacing="1">SELF-CORRECTIVE AGENTIC RAG</text>
-
-    <text x="0" y="32" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="44" font-weight="800" letter-spacing="-0.5">
-      Agentic RAG QA System
-    </text>
-    <text x="0" y="68" fill="url(#accentGradRag)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="600" letter-spacing="0.5">
-      Multi-Agent Quality Check Architecture • Hybrid Retrieval • Zero Hallucination Guardrails
-    </text>
-    <text x="0" y="100" fill="#94a3b8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15">
-      Four specialized AI quality check agents evaluate intent, context relevance, fact faithfulness, and answer quality.
-    </text>
-  </g>
-
-  <!-- Right Radar Score Visual -->
-  <g transform="translate(1010, 80)">
-    <rect width="130" height="130" rx="20" fill="#0f172a" stroke="#1e293b" stroke-width="2"/>
-    <circle cx="65" cy="65" r="40" fill="none" stroke="#334155" stroke-width="1.5"/>
-    <circle cx="65" cy="65" r="25" fill="none" stroke="#334155" stroke-width="1.5"/>
-    <polygon points="65,30 95,65 65,95 40,65" fill="#10b981" fill-opacity="0.35" stroke="#10b981" stroke-width="2"/>
-    <text x="65" y="112" fill="#34d399" font-family="monospace" font-size="11" font-weight="bold" text-anchor="middle">QUALITY: 98%</text>
-  </g>
+  
+  <!-- Bottom bar -->
+  <text x="72" y="500" class="mono" fill="var(--muted)" font-size="14">BM25 + VECTOR · FAITHFULNESS VERIFIED · SELF-CORRECTIVE</text>
+  <path d="M 800 500 Q 820 480 840 500 T 880 500 T 920 500 T 960 500 T 1000 500 T 1040 500 T 1080 500 T 1120 500 T 1160 500" fill="none" stroke="var(--accent)" stroke-width="2" class="wave"/>
 </svg>

@@ -1,13 +1,39 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 80" width="100%" height="100%">
-  <rect width="900" height="80" rx="10" fill="#07141e" stroke="#0f344d" stroke-width="1.5"/>
-  <g transform="translate(30, 45)">
-    <circle cx="10" cy="0" r="6" fill="#10b981"/>
-    <circle cx="10" cy="0" r="11" fill="none" stroke="#10b981" opacity="0.4"/>
-    <text x="30" y="5" fill="#f8fafc" font-family="sans-serif" font-size="14" font-weight="bold">QUALITY AGENTS: ONLINE</text>
-  </g>
-  <g transform="translate(320, 48)">
-    <text x="0" y="0" fill="#94a3b8" font-family="monospace" font-size="12">RELEVANCE: 98%</text>
-    <text x="140" y="0" fill="#94a3b8" font-family="monospace" font-size="12">FAITHFULNESS: 99%</text>
-    <text x="310" y="0" fill="#10b981" font-family="monospace" font-size="12">ZERO HALLUCINATIONS</text>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 150">
+  <style>
+    :root {
+      --panel: #f6f8fa; --panel-2: #ffffff; --ink: #0d1117; --muted: #57606a;
+      --line: #d0d7de; --accent: #0969da; --accent-soft: #ddf4ff; --good: #1a7f37;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --panel: #0d1117; --panel-2: #161b22; --ink: #f0f6fc; --muted: #8b949e;
+        --line: #30363d; --accent: #58a6ff; --accent-soft: #0c2d4a; --good: #3fb950;
+      }
+    }
+    .mono { font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace; }
+    
+    @keyframes draw { from { stroke-dashoffset: 1000; } to { stroke-dashoffset: 0; } }
+    @keyframes pulse-ring { 0% { r: 8px; opacity: 0.65; stroke-width: 2px; } 72%, 100% { r: 18px; opacity: 0; stroke-width: 1px; } }
+    @keyframes trace { to { stroke-dashoffset: -34; } }
+    
+    .draw { stroke-dasharray: 1000; animation: draw 1.15s cubic-bezier(.55,0,.2,1) forwards; }
+    .status-ring { animation: pulse-ring 2.8s cubic-bezier(.2,.72,.2,1) infinite; }
+    .trace { stroke-dasharray: 7 10; animation: trace 2s linear infinite; }
+    
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; }
+    }
+  </style>
+
+  <line x1="0" y1="1" x2="1200" y2="1" stroke="var(--line)" stroke-width="2" class="draw"/>
+  
+  <circle cx="70" cy="74" r="6" fill="var(--good)" />
+  <circle cx="70" cy="74" fill="none" stroke="var(--good)" class="status-ring"/>
+  
+  <text x="92" y="80" class="mono" font-size="18" font-weight="bold" fill="var(--ink)">HALO ACTIVE</text>
+  <text x="92" y="104" class="mono" font-size="14" fill="var(--muted)">4-agent verified · hallucination-free · self-corrective</text>
+  
+  <!-- Animated trace path -->
+  <path d="M 800 75 Q 820 50 840 75 T 880 75 T 920 75 T 960 75 T 1000 75 T 1040 75 T 1080 75 T 1120 75" fill="none" stroke="var(--accent)" stroke-width="2" class="trace"/>
+  <circle cx="1120" cy="75" r="4" fill="var(--accent)"/>
 </svg>
