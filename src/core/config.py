@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     TOP_K_RETRIEVE: int = 4
     MAX_RETRIES: int = 3
     
+    # Server / App Settings
+    HOST: str = "0.0.0.0"
+    PORT: int = 8000
+    
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 settings = Settings()

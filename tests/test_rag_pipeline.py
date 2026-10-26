@@ -1,39 +1,50 @@
 import pytest
-from rag_qa_system.core.schemas import QueryRequest
-from rag_qa_system.retrieval.chunker import TextChunker
-from rag_qa_system.retrieval.hybrid_retriever import HybridRetriever
-from rag_qa_system.agents.orchestrator_agent import RAGSupervisor
+from unittest.mock import MagicMock, patch
+from fastapi.testclient import TestClient
+from src.agents.state import AgentState
+from src.agents.graph import decide_to_generate, increment_retry
+from src.api.server import app
 
+client = TestClient(app)
 
-def test_chunker_basic():
-    chunker = TextChunker(chunk_size=100, chunk_overlap=10)
-    text = "Paragraph 1 is here.\n\nParagraph 2 is here with more words.\n\nParagraph 3 is final."
-    chunks = chunker.chunk_text(text, source="test.txt")
-    assert len(chunks) >= 1
-    assert chunks[0].source == "test.txt"
+def test_health_check():
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
 
+def test_decide_to_generate_flow():
+    state: AgentState = {
+        "question": "What is CRAG?",
+        "documents": [],
+        "web_search_needed": True,
+        "generation": "",
+        "retry_count": 0
+    }
+    assert decide_to_generate(state) == "transform_query"
+    
+    state["web_search_needed"] = False
+    assert decide_to_generate(state) == "generate"
 
-def test_hybrid_retriever():
-    retriever = HybridRetriever()
-    chunker = TextChunker()
-    doc = """Python is a high-level programming language.
-FastAPI is a modern web framework for building APIs.
-Docker enables containerization."""
-    chunks = chunker.chunk_text(doc, source="tech.md")
-    retriever.index_documents(chunks)
+def test_increment_retry():
+    state: AgentState = {
+        "question": "test",
+        "documents": [],
+        "web_search_needed": False,
+        "generation": "",
+        "retry_count": 1
+    }
+    updated = increment_retry(state)
+    assert updated["retry_count"] == 2
 
-    results = retriever.search("FastAPI framework", top_k=2)
-    assert len(results) > 0
-    assert any("FastAPI" in c.content for c in results)
-
-
-def test_supervisor_pipeline():
-    supervisor = RAGSupervisor()
-    chunker = TextChunker()
-    doc = "The speed of light in vacuum is approximately 299,792,458 meters per second."
-    supervisor.retriever.index_documents(chunker.chunk_text(doc, source="physics.md"))
-
-    res = supervisor.process_query(QueryRequest(query="What is the speed of light?"))
-    assert res.answer != ""
-    assert res.quality_report.overall_score > 0.0
-    assert len(res.quality_report.execution_steps) >= 3
+@patch("src.api.server.ingest_file_list")
+def test_upload_documents_endpoint(mock_ingest):
+    mock_ingest.return_value = (1, 3)
+    response = client.post(
+        "/api/v1/documents/upload",
+        files={"files": ("test.txt", b"Sample content for Halo agent testing.", "text/plain")}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["total_documents"] == 1
+    assert data["total_chunks"] == 3

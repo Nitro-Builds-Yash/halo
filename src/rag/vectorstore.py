@@ -3,7 +3,9 @@ from langchain_openai import OpenAIEmbeddings
 from src.core.config import settings
 
 def get_vectorstore():
-    embeddings = OpenAIEmbeddings()
+    # Allow passing explicit API key or fallback to environment
+    api_key = settings.OPENAI_API_KEY if settings.OPENAI_API_KEY else "dummy-key-for-init"
+    embeddings = OpenAIEmbeddings(api_key=api_key)
     vectorstore = Chroma(
         collection_name=settings.COLLECTION_NAME,
         embedding_function=embeddings,
