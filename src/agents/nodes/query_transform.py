@@ -6,10 +6,12 @@ from src.core.config import settings
 
 def transform_query(state: AgentState) -> dict:
     """
-    Transform the query to produce a better question for web search.
+    Transform the query to produce a better question for web search
+    while incrementing rewrite_count against hard ceiling.
     """
-    print("---TRANSFORM QUERY---")
+    print("---TRANSFORM QUERY (WITH REWRITE LIMIT)---")
     question = state["question"]
+    rewrite_count = state.get("rewrite_count", 0) + 1
     
     llm = ChatOpenAI(model=settings.LLM_MODEL, temperature=0)
     
@@ -22,6 +24,13 @@ def transform_query(state: AgentState) -> dict:
     ])
     
     question_rewriter = re_write_prompt | llm | StrOutputParser()
-    better_question = question_rewriter.invoke({"question": question})
+    try:
+        better_question = question_rewriter.invoke({"question": question})
+    except Exception as e:
+        print(f"Query rewriter fallback: {e}")
+        better_question = question
     
-    return {"question": better_question}
+    return {
+        "question": better_question,
+        "rewrite_count": rewrite_count
+    }

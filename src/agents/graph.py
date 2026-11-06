@@ -6,20 +6,24 @@ from src.agents.nodes.grading import grade_documents
 from src.agents.nodes.query_transform import transform_query
 from src.agents.nodes.web_search import web_search
 from src.agents.nodes.generation import generate
-from src.agents.nodes.reflection import check_hallucination_and_answer
+from src.agents.nodes.reflection import check_hallucination_and_answer, MAX_REWRITES, MAX_REGENERATIONS
+from src.agents.nodes.fallback import graceful_fallback
 
 def decide_to_generate(state: AgentState):
     """
     Determines whether to proceed to generation, or fallback to query transformation & search.
     """
-    print("---ASSESS GRADED DOCUMENTS---")
     web_search_needed = state.get("web_search_needed", False)
-    
+    rewrite_count = state.get("rewrite_count", 0)
+
     if web_search_needed:
-        print("---DECISION: CONTEXT INSUFFICIENT, TRANSFORM QUERY FOR WEB FALLBACK---")
+        if rewrite_count >= MAX_REWRITES:
+            print("---MAX REWRITES REACHED: SKIPPING WEB SEARCH TO PREVENT CYCLE---")
+            return "generate"
+        print("---DECISION: CONTEXT INSUFFICIENT, TRANSFORM QUERY FOR WEB SEARCH---")
         return "transform_query"
     else:
-        print("---DECISION: LOCAL CONTEXT SUFFICIENT, PROCEED TO GENERATE---")
+        print("---DECISION: CONTEXT SUFFICIENT, PROCEED TO GENERATE---")
         return "generate"
 
 def increment_retry(state: AgentState):
@@ -28,7 +32,7 @@ def increment_retry(state: AgentState):
 def build_graph():
     workflow = StateGraph(AgentState)
 
-    # Register all nodes
+    # Register nodes
     workflow.add_node("decompose_query", decompose_query)
     workflow.add_node("retrieve", retrieve)
     workflow.add_node("grade_documents", grade_documents)
@@ -36,8 +40,9 @@ def build_graph():
     workflow.add_node("transform_query", transform_query)
     workflow.add_node("web_search", web_search)
     workflow.add_node("increment_retry", increment_retry)
+    workflow.add_node("graceful_fallback", graceful_fallback)
 
-    # Entry point begins with query decomposition
+    # Topological edges
     workflow.set_entry_point("decompose_query")
     workflow.add_edge("decompose_query", "retrieve")
     workflow.add_edge("retrieve", "grade_documents")
@@ -60,10 +65,11 @@ def build_graph():
             "not_supported": "increment_retry",
             "not_useful": "increment_retry",
             "useful": END,
-            "max_retries": END
+            "fallback": "graceful_fallback"
         }
     )
     workflow.add_edge("increment_retry", "transform_query")
+    workflow.add_edge("graceful_fallback", END)
     
     return workflow.compile()
 

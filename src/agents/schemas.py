@@ -1,11 +1,14 @@
 from typing import List, Dict, Any, Optional, Literal
 from pydantic import BaseModel, Field
 
-class GradeDocuments(BaseModel):
-    """Binary score for relevance check on retrieved documents."""
-    binary_score: Literal["yes", "no"] = Field(
-        description="Documents are relevant to the question, 'yes' or 'no'"
-    )
+class ChunkGrade(BaseModel):
+    chunk_index: int = Field(description="Index of the chunk in the evaluation batch")
+    is_relevant: Literal["yes", "no"] = Field(description="Whether the chunk is semantically relevant to answering the question")
+    relevance_reason: Optional[str] = Field(default=None, description="Brief justification for the relevance assessment")
+
+class BatchChunkGrading(BaseModel):
+    """Single-call structured output schema to grade all borderline retrieved chunks at once."""
+    grades: List[ChunkGrade] = Field(description="Relevance evaluations for each chunk in the batch")
 
 class GradeHallucinations(BaseModel):
     """Binary score for hallucination check on generation."""

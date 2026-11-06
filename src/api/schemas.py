@@ -1,11 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
-class CitationModel(BaseModel):
-    source: str
-    page: Optional[int] = None
-    snippet: str
-
 class QueryRequest(BaseModel):
     question: str = Field(..., description="The query or question to be processed by the CRAG pipeline")
 
@@ -16,11 +11,11 @@ class QueryResponse(BaseModel):
     citations: List[Dict[str, Any]] = Field(default_factory=list, description="Extracted source citations with pages and snippets")
     documents: List[str] = []
     retry_count: int = 0
+    rewrite_count: int = 0
     web_search_needed: bool = False
-
-class StreamChunk(BaseModel):
-    node: str
-    content: Optional[str] = None
+    is_fallback: bool = False
+    cached: bool = False
+    cached_similarity: Optional[float] = None
 
 class IngestResponse(BaseModel):
     status: str

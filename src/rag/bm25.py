@@ -1,22 +1,25 @@
 import os
 import json
+import re
 from typing import List, Dict, Any, Optional
-from rank_bm25 import BM25Okapi
+from rank_bm25 import BM25Plus, BM25Okapi
 
 class BM25Index:
     """
-    Persistent BM25 Okapi lexical search index for exact keyword matching.
+    Persistent Sparse BM25 lexical search index for exact keyword matching.
+    Uses BM25Plus to avoid negative/zero IDF on small corpora.
     """
     def __init__(self, persist_path: str = "./chroma_db/bm25_index.json"):
         self.persist_path = persist_path
         self.documents: List[str] = []
         self.metadatas: List[Dict[str, Any]] = []
         self.corpus_tokens: List[List[str]] = []
-        self.bm25: Optional[BM25Okapi] = None
+        self.bm25: Optional[BM25Plus] = None
         self._load()
 
     def _tokenize(self, text: str) -> List[str]:
-        return text.lower().replace("\n", " ").split()
+        cleaned = re.sub(r"[^\w\s]", " ", text.lower())
+        return cleaned.split()
 
     def add_documents(self, documents: List[str], metadatas: Optional[List[Dict[str, Any]]] = None):
         if not documents:
@@ -32,7 +35,7 @@ class BM25Index:
         self.corpus_tokens.extend(new_tokens)
         
         if self.corpus_tokens:
-            self.bm25 = BM25Okapi(self.corpus_tokens)
+            self.bm25 = BM25Plus(self.corpus_tokens)
             
         self._save()
 
@@ -45,18 +48,25 @@ class BM25Index:
             return []
             
         scores = self.bm25.get_scores(tokens)
-        scored_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
+        # Filter for documents containing at least one query term
+        query_set = set(tokens)
+        scored_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
         
         results = []
         for idx in scored_indices:
-            score = float(scores[idx])
-            if score > 0:
+            # Verify term overlap
+            doc_tokens = set(self.corpus_tokens[idx])
+            overlap = query_set.intersection(doc_tokens)
+            if overlap:
                 results.append({
                     "content": self.documents[idx],
                     "metadata": self.metadatas[idx] if idx < len(self.metadatas) else {},
-                    "score": score,
+                    "score": float(scores[idx]),
                     "index": idx
                 })
+            if len(results) >= top_k:
+                break
+
         return results
 
     def _save(self):
@@ -77,6 +87,6 @@ class BM25Index:
                 self.metadatas = data.get("metadatas", [])
                 self.corpus_tokens = [self._tokenize(doc) for doc in self.documents]
                 if self.corpus_tokens:
-                    self.bm25 = BM25Okapi(self.corpus_tokens)
+                    self.bm25 = BM25Plus(self.corpus_tokens)
             except Exception as e:
                 print(f"Warning: Failed to load BM25 index from {self.persist_path}: {e}")
