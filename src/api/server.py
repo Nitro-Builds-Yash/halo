@@ -2,19 +2,19 @@ import os
 import shutil
 import tempfile
 from typing import List
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 import json
 
 from src.agents.graph import graph
 from src.api.schemas import QueryRequest, QueryResponse, IngestResponse
-from src.rag.ingest import ingest_documents, ingest_file_list
+from src.rag.ingest import ingest_file_list
 
 app = FastAPI(
     title="Halo Agentic CRAG API",
-    description="Agentic Corrective RAG (CRAG) system with self-corrective retrieval, hallucination auditing, and quality grading.",
-    version="0.2.0"
+    description="Production Corrective RAG with Hybrid BM25+Dense Search, CrossEncoder Reranking, Query Decomposition, and Confidence Scoring.",
+    version="1.1.0"
 )
 
 app.add_middleware(
@@ -27,12 +27,22 @@ app.add_middleware(
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "halo-crag-api"}
+    return {
+        "status": "ok",
+        "service": "halo-crag-api",
+        "features": [
+            "hybrid_bm25_dense_search",
+            "cross_encoder_reranker",
+            "query_decomposition",
+            "structured_citations",
+            "calibrated_confidence_scoring"
+        ]
+    }
 
 @app.post("/api/v1/query", response_model=QueryResponse)
 async def sync_query(query: QueryRequest):
     """
-    Synchronous endpoint to process a user question through the complete CRAG workflow.
+    Synchronous endpoint returning answer, numerical confidence, citations, and quality metadata.
     """
     try:
         inputs = {"question": query.question, "retry_count": 0}
@@ -40,6 +50,8 @@ async def sync_query(query: QueryRequest):
         return QueryResponse(
             question=query.question,
             generation=result.get("generation", ""),
+            confidence=result.get("confidence", 0.0),
+            citations=result.get("citations", []),
             documents=result.get("documents", []),
             retry_count=result.get("retry_count", 0),
             web_search_needed=result.get("web_search_needed", False)
@@ -50,21 +62,27 @@ async def sync_query(query: QueryRequest):
 @app.post("/api/v1/chat/stream")
 async def chat_stream(request: Request, query: QueryRequest):
     """
-    Server-Sent Events (SSE) stream yielding node transitions and the generated output.
+    Server-Sent Events (SSE) streaming node transitions, decomposition steps, and final generation.
     """
     async def event_generator():
         try:
             inputs = {"question": query.question, "retry_count": 0}
             async for output in graph.astream(inputs):
                 for node_name, state_update in output.items():
+                    # Stream intermediate node progress
+                    filtered_update = {k: v for k, v in state_update.items() if k not in ["documents", "doc_metadata"]}
                     yield {
                         "event": "node_change",
-                        "data": json.dumps({"node": node_name, "update": {k: v for k, v in state_update.items() if k != "documents"}})
+                        "data": json.dumps({"node": node_name, "update": filtered_update})
                     }
                     if "generation" in state_update and node_name == "generate":
                         yield {
                             "event": "message",
-                            "data": json.dumps({"content": state_update["generation"]})
+                            "data": json.dumps({
+                                "content": state_update["generation"],
+                                "confidence": state_update.get("confidence", 0.0),
+                                "citations": state_update.get("citations", [])
+                            })
                         }
         except Exception as e:
             yield {
@@ -77,7 +95,7 @@ async def chat_stream(request: Request, query: QueryRequest):
 @app.post("/api/v1/documents/upload", response_model=IngestResponse)
 async def upload_documents(files: List[UploadFile] = File(...)):
     """
-    Upload and ingest multiple documents (PDF, TXT, MD) directly into the vector store.
+    Upload files to both ChromaDB vector store and BM25 lexical index with page and metadata preservation.
     """
     temp_dir = tempfile.mkdtemp(prefix="halo_upload_")
     saved_paths = []
@@ -91,7 +109,7 @@ async def upload_documents(files: List[UploadFile] = File(...)):
         num_docs, num_chunks = ingest_file_list(saved_paths)
         return IngestResponse(
             status="success",
-            message=f"Successfully ingested {num_docs} document(s) into {num_chunks} chunks.",
+            message=f"Successfully ingested {num_docs} document(s) into {num_chunks} chunks with hybrid indexing.",
             total_documents=num_docs,
             total_chunks=num_chunks
         )

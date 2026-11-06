@@ -1,5 +1,6 @@
 from langgraph.graph import END, StateGraph
 from src.agents.state import AgentState
+from src.agents.nodes.query_decompose import decompose_query
 from src.agents.nodes.retrieval import retrieve
 from src.agents.nodes.grading import grade_documents
 from src.agents.nodes.query_transform import transform_query
@@ -9,16 +10,16 @@ from src.agents.nodes.reflection import check_hallucination_and_answer
 
 def decide_to_generate(state: AgentState):
     """
-    Determines whether to generate an answer, or re-generate a question.
+    Determines whether to proceed to generation, or fallback to query transformation & search.
     """
     print("---ASSESS GRADED DOCUMENTS---")
-    web_search_needed = state["web_search_needed"]
+    web_search_needed = state.get("web_search_needed", False)
     
     if web_search_needed:
-        print("---DECISION: ALL DOCUMENTS ARE NOT RELEVANT TO QUESTION, TRANSFORM QUERY---")
+        print("---DECISION: CONTEXT INSUFFICIENT, TRANSFORM QUERY FOR WEB FALLBACK---")
         return "transform_query"
     else:
-        print("---DECISION: GENERATE---")
+        print("---DECISION: LOCAL CONTEXT SUFFICIENT, PROCEED TO GENERATE---")
         return "generate"
 
 def increment_retry(state: AgentState):
@@ -27,7 +28,8 @@ def increment_retry(state: AgentState):
 def build_graph():
     workflow = StateGraph(AgentState)
 
-    # Define the nodes
+    # Register all nodes
+    workflow.add_node("decompose_query", decompose_query)
     workflow.add_node("retrieve", retrieve)
     workflow.add_node("grade_documents", grade_documents)
     workflow.add_node("generate", generate)
@@ -35,9 +37,11 @@ def build_graph():
     workflow.add_node("web_search", web_search)
     workflow.add_node("increment_retry", increment_retry)
 
-    # Build graph
-    workflow.set_entry_point("retrieve")
+    # Entry point begins with query decomposition
+    workflow.set_entry_point("decompose_query")
+    workflow.add_edge("decompose_query", "retrieve")
     workflow.add_edge("retrieve", "grade_documents")
+    
     workflow.add_conditional_edges(
         "grade_documents",
         decide_to_generate,
