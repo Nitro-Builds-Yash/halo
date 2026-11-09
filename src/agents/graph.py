@@ -1,5 +1,5 @@
 from langgraph.graph import END, StateGraph
-from src.agents.state import AgentState
+from src.agents.state import AgentState, GraphState
 from src.agents.nodes.query_decompose import decompose_query
 from src.agents.nodes.retrieval import retrieve
 from src.agents.nodes.grading import grade_documents
@@ -9,16 +9,16 @@ from src.agents.nodes.generation import generate
 from src.agents.nodes.reflection import check_hallucination_and_answer, MAX_REWRITES, MAX_REGENERATIONS
 from src.agents.nodes.fallback import graceful_fallback
 
-def decide_to_generate(state: AgentState):
+def decide_to_generate(state: GraphState):
     """
-    Determines whether to proceed to generation, or fallback to query transformation & search.
+    Circuit breaker checking rewrite_count before routing to web search.
     """
     web_search_needed = state.get("web_search_needed", False)
     rewrite_count = state.get("rewrite_count", 0)
 
     if web_search_needed:
         if rewrite_count >= MAX_REWRITES:
-            print("---MAX REWRITES REACHED: SKIPPING WEB SEARCH TO PREVENT CYCLE---")
+            print("---CIRCUIT BREAKER: MAX REWRITES REACHED, BYPASSING WEB SEARCH---")
             return "generate"
         print("---DECISION: CONTEXT INSUFFICIENT, TRANSFORM QUERY FOR WEB SEARCH---")
         return "transform_query"
@@ -26,11 +26,16 @@ def decide_to_generate(state: AgentState):
         print("---DECISION: CONTEXT SUFFICIENT, PROCEED TO GENERATE---")
         return "generate"
 
-def increment_retry(state: AgentState):
-    return {"retry_count": state.get("retry_count", 0) + 1}
+def increment_retry(state: GraphState):
+    current_retry = state.get("retry_count", 0) + 1
+    current_gen = state.get("generation_count", 0) + 1
+    return {
+        "retry_count": current_retry,
+        "generation_count": current_gen
+    }
 
 def build_graph():
-    workflow = StateGraph(AgentState)
+    workflow = StateGraph(GraphState)
 
     # Register nodes
     workflow.add_node("decompose_query", decompose_query)
@@ -42,7 +47,7 @@ def build_graph():
     workflow.add_node("increment_retry", increment_retry)
     workflow.add_node("graceful_fallback", graceful_fallback)
 
-    # Topological edges
+    # Topological execution & Circuit Breakers
     workflow.set_entry_point("decompose_query")
     workflow.add_edge("decompose_query", "retrieve")
     workflow.add_edge("retrieve", "grade_documents")

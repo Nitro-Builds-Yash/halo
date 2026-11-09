@@ -10,6 +10,10 @@ class AgentState(TypedDict):
     generation: str
     confidence: float
     citations: List[Dict[str, Any]]
-    retry_count: int      # Hard ceiling for regenerations
-    rewrite_count: int    # Hard ceiling for query rewrites
-    is_fallback: bool     # Flag indicating deterministic graceful fallback activated
+    retry_count: int         # Legacy alias for generation_count
+    generation_count: int    # Enforced hard limit (max 1-2 generations)
+    rewrite_count: int       # Enforced hard limit (max 1-2 query rewrites)
+    is_fallback: bool        # Flag indicating deterministic graceful fallback activated
+
+# GraphState alias as specified in system design
+GraphState = AgentState
