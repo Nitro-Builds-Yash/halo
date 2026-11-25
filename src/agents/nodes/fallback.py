@@ -1,37 +1,34 @@
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
+from src.agents.nodes.generation import NO_CONTEXT_ANSWER
 from src.agents.state import AgentState
+from src.core.log import get_logger
+
+logger = get_logger(__name__)
+
 
 def graceful_fallback(state: AgentState) -> dict:
-    """
-    Deterministic Graceful Fallback Node:
-    Triggered when the pipeline reaches the hard ceiling (max_rewrites=1, max_regenerations=1)
-    and the answer still cannot pass the strict factual groundedness audit.
-    Returns the best verified citations along with a partial-confidence disclaimer.
-    """
-    print("---DETERMINISTIC GRACEFUL FALLBACK---")
-    question = state["question"]
+    """Deterministic fallback once self-correction is exhausted: return the best excerpts
+    with a clear disclaimer instead of an unverified answer."""
     documents = state.get("documents", [])
-    doc_metadata = state.get("doc_metadata", [])
+    metas = state.get("doc_metadata", [])
+    logger.info("fallback: verdict=%s, %d document(s)", state.get("verdict"), len(documents))
+
+    if not documents:
+        return {"generation": NO_CONTEXT_ANSWER, "confidence": 0.0, "citations": [], "is_fallback": True}
 
     citations: List[Dict[str, Any]] = []
-    for idx, doc in enumerate(documents[:3]): # Top 3 best retrieved excerpts
-        meta = doc_metadata[idx] if idx < len(doc_metadata) else {}
-        snippet = doc[:200] + "..." if len(doc) > 200 else doc
+    for idx, doc in enumerate(documents[:3]):
+        meta = metas[idx] if idx < len(metas) else {}
         citations.append({
             "source": meta.get("source", "Indexed Document"),
-            "page": meta.get("page", None),
-            "snippet": snippet
+            "page": meta.get("page"),
+            "snippet": doc[:300] + ("..." if len(doc) > 300 else ""),
         })
 
-    fallback_text = (
-        f"**Partial Confidence Disclaimer:** The system reached its self-correction limit ({state.get('retry_count', 1)} attempts) "
-        f"without achieving complete factual verification for your inquiry. "
-        f"Below are the most relevant grounded excerpts found in the indexed corpus. Please review the attached source citations directly."
+    attempts = 1 + state.get("retry_count", 0)
+    text = (
+        f"**Partial confidence:** I couldn't produce a fully verified answer after {attempts} attempt(s). "
+        "These are the most relevant excerpts I found; please check the cited sources directly."
     )
-
-    return {
-        "generation": fallback_text,
-        "confidence": 0.45,
-        "citations": citations,
-        "is_fallback": True
-    }
+    return {"generation": text, "confidence": 0.3, "citations": citations, "is_fallback": True}

@@ -1,36 +1,33 @@
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+
 from src.agents.state import AgentState
-from src.core.config import settings
+from src.core.llm import get_llm
+from src.core.log import get_logger
+
+logger = get_logger(__name__)
+
+_SYSTEM = """You rewrite questions into concise, well-formed web search queries.
+Keep the user's intent, names, numbers and constraints. Return only the query text."""
+
+
+def rewrite_query(question: str) -> str:
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", _SYSTEM),
+        ("human", "Question: {question}\n\nSearch query:"),
+    ])
+    return (prompt | get_llm(0.0) | StrOutputParser()).invoke({"question": question}).strip()
+
 
 def transform_query(state: AgentState) -> dict:
-    """
-    Transform the query to produce a better question for web search
-    while incrementing rewrite_count against hard ceiling.
-    """
-    print("---TRANSFORM QUERY (WITH REWRITE LIMIT)---")
+    """Produce a web-search query. The user's `question` is left untouched so the
+    answer and the answer check are always judged against what was actually asked."""
     question = state["question"]
-    rewrite_count = state.get("rewrite_count", 0) + 1
-    
-    llm = ChatOpenAI(model=settings.LLM_MODEL, temperature=0)
-    
-    system = """You are generating questions that are well optimized for retrieval. 
-    Look at the input and try to reason about the underlying semantic intent / meaning."""
-    
-    re_write_prompt = ChatPromptTemplate.from_messages([
-        ("system", system),
-        ("human", "Here is the initial question: \n\n {question} \n Formulate an improved question.")
-    ])
-    
-    question_rewriter = re_write_prompt | llm | StrOutputParser()
     try:
-        better_question = question_rewriter.invoke({"question": question})
-    except Exception as e:
-        print(f"Query rewriter fallback: {e}")
-        better_question = question
-    
-    return {
-        "question": better_question,
-        "rewrite_count": rewrite_count
-    }
+        search_query = rewrite_query(question) or question
+    except Exception:
+        logger.exception("transform: rewrite failed, using original question")
+        search_query = question
+
+    logger.info("transform: %r", search_query)
+    return {"search_query": search_query, "rewrite_count": state.get("rewrite_count", 0) + 1}

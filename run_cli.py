@@ -1,14 +1,18 @@
-import sys
 import os
+import sys
+
 from rich.console import Console
-from rich.panel import Panel
 from rich.markdown import Markdown
+from rich.panel import Panel
 from rich.table import Table
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from src.agents.graph import graph
+from src.agents.runner import cache_payload, cached_answer, should_cache, summarize
+from src.agents.state import initial_state
 from src.core.config import settings
+from src.core.semantic_cache import SemanticCache
 
 console = Console()
 
@@ -27,33 +31,43 @@ def display_pipeline_step(node_name: str, update: dict):
         "transform_query": "🔄 [blue]Step 4: Query insufficient. Transforming for external web search...[/blue]",
         "web_search": "🌐 [cyan]Step 5: Executing fallback search via Tavily/Web...[/cyan]",
         "generate": "✍️ [green]Step 6: Synthesizing verified answer with confidence & citations...[/green]",
-        "increment_retry": "⚠️ [red]Step: Reflection triggered retry due to quality gate check...[/red]"
+        "reflect": f"🧪 [white]Verification: {update.get('verdict', '')}[/white]",
+        "increment_retry": "⚠️ [red]Answer not verified — retrying with web context...[/red]",
+        "graceful_fallback": "🛟 [yellow]Fallback: returning best excerpts with a disclaimer[/yellow]",
     }
     msg = step_icons.get(node_name, f"⚡ Processing node: {node_name}")
     console.print(msg)
 
 def ask_question(question: str):
     console.print(f"\n[bold yellow]User Question:[/bold yellow] {question}\n")
-    inputs = {"question": question, "retry_count": 0}
-    
-    final_state = {}
-    with console.status("[bold green]Executing agent graph...", spinner="dots"):
-        for output in graph.stream(inputs):
-            for node_name, state_update in output.items():
-                display_pipeline_step(node_name, state_update)
-                final_state.update(state_update)
+    cache = SemanticCache.get_instance()
+    hit = cached_answer(question, cache)
+    if hit:
+        console.print(f"⚡ [green]Semantic cache hit (similarity {hit['cached_similarity']})[/green]")
+        result = hit
+    else:
+        final_state = {}
+        with console.status("[bold green]Executing agent graph...", spinner="dots"):
+            for output in graph.stream(initial_state(question)):
+                for node_name, state_update in output.items():
+                    display_pipeline_step(node_name, state_update or {})
+                    final_state.update(state_update or {})
+        result = summarize(question, final_state)
+        if should_cache(result):
+            cache.store(question, cache_payload(final_state))
 
-    answer = final_state.get("generation", "No generation produced.")
-    confidence = final_state.get("confidence", 0.0)
-    citations = final_state.get("citations", [])
-    documents = final_state.get("documents", [])
-    web_used = final_state.get("web_search_needed", False)
-    retries = final_state.get("retry_count", 0)
+    answer = result["generation"] or "No generation produced."
+    confidence = result["confidence"]
+    citations = result["citations"]
+    documents = result["documents"]
+    web_used = result["web_search_used"]
+    retries = result["retry_count"]
 
     # Display Answer
     console.print("\n" + "="*60)
     conf_color = "green" if confidence >= 0.8 else "yellow" if confidence >= 0.5 else "red"
-    title_text = f"[bold green]Verified Answer[/bold green] [{conf_color}](Confidence: {int(confidence * 100)}%)[/{conf_color}]"
+    label = "Partial Answer (unverified)" if result["is_fallback"] else "Verified Answer"
+    title_text = f"[bold green]{label}[/bold green] [{conf_color}](Confidence: {int(confidence * 100)}%)[/{conf_color}]"
     console.print(Panel(Markdown(answer), title=title_text, border_style="green"))
 
     # Display Citations if any

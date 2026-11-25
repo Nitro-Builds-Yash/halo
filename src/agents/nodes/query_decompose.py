@@ -1,41 +1,40 @@
-from langchain_openai import ChatOpenAI
+import re
+
 from langchain_core.prompts import ChatPromptTemplate
-from src.agents.state import AgentState
+
 from src.agents.schemas import SubQueries
-from src.core.config import settings
+from src.agents.state import AgentState
+from src.core.llm import get_llm
+from src.core.log import get_logger
 
-def decompose_query(state: AgentState) -> dict:
-    """
-    Analyzes whether the query is complex, comparative, or multi-hop,
-    and decomposes it into distinct atomic sub-queries for precision retrieval.
-    """
-    print("---DECOMPOSE QUERY---")
-    question = state["question"]
-    
-    # If the question is simple, keep it as single item
-    words = question.strip().split()
-    if len(words) <= 5 and not any(w in question.lower() for w in ["compare", "difference", "versus", "vs", "and", "both"]):
-        return {"sub_questions": [question]}
+logger = get_logger(__name__)
 
-    llm = ChatOpenAI(model=settings.LLM_MODEL, temperature=0)
-    structured_decomposer = llm.with_structured_output(SubQueries)
+# Whole-word match, so "standard" / "understand" no longer trigger decomposition via "and".
+_COMPLEX_HINTS = re.compile(r"\b(compare|comparison|difference|differences|versus|vs|and|both|between)\b", re.I)
 
-    system = """You are an expert search query planner.
+_SYSTEM = """You are an expert search query planner.
 Given a user question, decompose it into 1 to 3 atomic sub-questions that must be answered to satisfy the user request.
 For comparative or multi-hop questions, isolate each entity or temporal aspect into its own query.
 If the question is already atomic, return a single sub-question identical to the original."""
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system),
-        ("human", "Question: {question}")
-    ])
 
-    decomposer_chain = prompt | structured_decomposer
+def needs_decomposition(question: str) -> bool:
+    return len(question.split()) > 12 or bool(_COMPLEX_HINTS.search(question))
+
+
+def decompose_query(state: AgentState) -> dict:
+    question = state["question"]
+    if not needs_decomposition(question):
+        return {"sub_questions": [question]}
+
+    prompt = ChatPromptTemplate.from_messages([("system", _SYSTEM), ("human", "Question: {question}")])
+    chain = prompt | get_llm(0.0).with_structured_output(SubQueries)
     try:
-        res = decomposer_chain.invoke({"question": question})
-        sub_qs = res.sub_questions if res.sub_questions else [question]
-    except Exception as e:
-        print(f"Query decomposition fallback: {e}")
+        res = chain.invoke({"question": question})
+        sub_qs = [q for q in (res.sub_questions or []) if q.strip()][:3] or [question]
+    except Exception:
+        logger.exception("decompose: failed, using original question")
         sub_qs = [question]
 
+    logger.info("decompose: %s", sub_qs)
     return {"sub_questions": sub_qs}

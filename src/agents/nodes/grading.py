@@ -1,82 +1,84 @@
-from typing import List, Dict, Any
-from langchain_openai import ChatOpenAI
+from typing import Any, Dict, List, Optional, Set
+
 from langchain_core.prompts import ChatPromptTemplate
-from src.agents.state import AgentState
+
 from src.agents.schemas import BatchChunkGrading
+from src.agents.state import AgentState
 from src.core.config import settings
+from src.core.llm import get_llm
+from src.core.log import get_logger
 
-def grade_documents(state: AgentState) -> dict:
-    """
-    Fast Cross-Encoder Gatekeeper & Single-Call Structured Batch Grading:
-    1. If the Cross-Encoder score is >= 0.85, chunks bypass the LLM evaluator entirely and proceed.
-    2. Borderline chunks (scores between 0.40 and 0.85) are graded in a SINGLE batched structured output call.
-    3. Chunks below 0.40 are discarded without wasting LLM tokens.
-    """
-    print("---GRADE DOCUMENTS (BATCH & GATEKEEPER)---")
-    question = state["question"]
-    documents = state.get("documents", [])
-    doc_metadata = state.get("doc_metadata", [])
-    cross_conf = state.get("cross_encoder_confidence", 0.0)
+logger = get_logger(__name__)
 
-    # 1. Gatekeeper bypass: if Cross-Encoder is confident, bypass LLM grading
-    if cross_conf >= 0.85 and documents:
-        print(f"---CROSS-ENCODER CONFIDENCE HIGH ({cross_conf:.2f} >= 0.85): BYPASSING LLM EVALUATOR---")
-        return {
-            "documents": documents,
-            "doc_metadata": doc_metadata,
-            "web_search_needed": False
-        }
-
-    if not documents:
-        return {"documents": [], "doc_metadata": [], "web_search_needed": True}
-
-    # 2. Single-Call Structured Batch Grading
-    # Format all candidate chunks with indexed headers
-    formatted_chunks = []
-    for idx, doc in enumerate(documents):
-        meta = doc_metadata[idx] if idx < len(doc_metadata) else {}
-        source = meta.get("source", "Unknown")
-        formatted_chunks.append(f"[Chunk Index {idx} | Source: {source}]\n{doc}")
-
-    batch_context = "\n\n---\n\n".join(formatted_chunks)
-
-    # Use fast, cheap model (e.g. gpt-4o-mini or 8B-class) for grading
-    llm = ChatOpenAI(model=settings.LLM_MODEL, temperature=0)
-    structured_grader = llm.with_structured_output(BatchChunkGrading)
-
-    system = """You are a fast, precision-oriented retrieval grader.
+_SYSTEM = """You are a fast, precision-oriented retrieval grader.
 Assess the relevance of each indexed chunk to the given user question.
 Return a structured list of ChunkGrade evaluations matching each chunk index.
 If a chunk contains facts, definitions, or context useful to answer the question, grade is_relevant='yes', otherwise 'no'."""
 
+
+def llm_batch_grade(question: str, chunks: List[str], metas: List[Dict[str, Any]]) -> Set[int]:
+    """Grade chunks in ONE structured LLM call. Returns the indices (into `chunks`) judged relevant."""
+    formatted = []
+    for idx, doc in enumerate(chunks):
+        source = (metas[idx] if idx < len(metas) else {}).get("source", "Unknown")
+        formatted.append(f"[Chunk Index {idx} | Source: {source}]\n{doc}")
+
     prompt = ChatPromptTemplate.from_messages([
-        ("system", system),
-        ("human", "User Question: {question}\n\nCandidate Chunks:\n{chunks}")
+        ("system", _SYSTEM),
+        ("human", "User Question: {question}\n\nCandidate Chunks:\n{chunks}"),
     ])
+    chain = prompt | get_llm(0.0).with_structured_output(BatchChunkGrading)
+    res: BatchChunkGrading = chain.invoke({"question": question, "chunks": "\n\n---\n\n".join(formatted)})
+    return {g.chunk_index for g in res.grades if g.is_relevant == "yes" and 0 <= g.chunk_index < len(chunks)}
 
-    batch_chain = prompt | structured_grader
 
-    filtered_docs: List[str] = []
-    filtered_metas: List[Dict[str, Any]] = []
+def grade_documents(state: AgentState) -> dict:
+    """Per-chunk cross-encoder gatekeeper + single-call batch grading.
 
-    try:
-        res: BatchChunkGrading = batch_chain.invoke({"question": question, "chunks": batch_context})
-        relevant_indices = {g.chunk_index for g in res.grades if g.is_relevant == "yes"}
-        
-        for idx in range(len(documents)):
-            if idx in relevant_indices:
-                filtered_docs.append(documents[idx])
-                if idx < len(doc_metadata):
-                    filtered_metas.append(doc_metadata[idx])
-    except Exception as e:
-        print(f"Batch grading fallback: {e}")
-        filtered_docs = documents
-        filtered_metas = doc_metadata
+    - score >= GATE_HIGH  -> kept without an LLM call
+    - score <  GATE_LOW   -> discarded without an LLM call
+    - in between, or unscored (reranker unavailable) -> graded together in one LLM call
+    """
+    question = state["question"]
+    documents = state.get("documents", [])
+    metas = state.get("doc_metadata", [])
+    scores: List[Optional[float]] = state.get("doc_scores") or [None] * len(documents)
 
-    web_search_needed = len(filtered_docs) == 0
+    if not documents:
+        logger.info("grade: no candidate chunks -> web search needed")
+        return {"documents": [], "doc_metadata": [], "doc_scores": [], "web_search_needed": True}
 
+    keep: Set[int] = set()
+    borderline: List[int] = []
+    for i in range(len(documents)):
+        s = scores[i] if i < len(scores) else None
+        if s is None:
+            borderline.append(i)
+        elif s >= settings.GATE_HIGH:
+            keep.add(i)
+        elif s >= settings.GATE_LOW:
+            borderline.append(i)
+
+    logger.info("grade: %d auto-kept, %d borderline, %d discarded",
+                len(keep), len(borderline), len(documents) - len(keep) - len(borderline))
+
+    if borderline:
+        try:
+            relevant = llm_batch_grade(
+                question,
+                [documents[i] for i in borderline],
+                [metas[i] if i < len(metas) else {} for i in borderline],
+            )
+            keep.update(borderline[j] for j in relevant)
+        except Exception:
+            # Keep borderline context rather than lose it; the grounding check still guards the answer.
+            logger.exception("grade: batch grading failed; keeping borderline chunks")
+            keep.update(borderline)
+
+    ordered = sorted(keep)
     return {
-        "documents": filtered_docs,
-        "doc_metadata": filtered_metas,
-        "web_search_needed": web_search_needed
+        "documents": [documents[i] for i in ordered],
+        "doc_metadata": [metas[i] if i < len(metas) else {} for i in ordered],
+        "doc_scores": [scores[i] if i < len(scores) else None for i in ordered],
+        "web_search_needed": len(ordered) == 0,
     }

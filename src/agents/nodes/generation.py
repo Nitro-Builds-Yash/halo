@@ -1,70 +1,74 @@
-from typing import List, Dict, Any
-from langchain_openai import ChatOpenAI
+from typing import Any, Dict, List
+
 from langchain_core.prompts import ChatPromptTemplate
-from src.agents.state import AgentState
+
 from src.agents.schemas import AnswerWithCitations
-from src.core.config import settings
+from src.agents.state import AgentState
+from src.core.llm import get_llm
+from src.core.log import get_logger
+
+logger = get_logger(__name__)
+
+NO_CONTEXT_ANSWER = (
+    "I couldn't find information about this in the indexed documents or from web search."
+)
+
+_SYSTEM = """You are a rigorous QA assistant.
+1. Answer the user question accurately and concisely, strictly based on the provided context.
+2. If the context does not contain enough information, say exactly what is missing.
+3. Attach citations (source, page, short verbatim snippet) for each factual claim. Only cite sources that appear in the context headers.
+4. Give a confidence score between 0.0 and 1.0 for how completely and unambiguously the context answers the question:
+   - 0.85 - 1.0: fully answered with direct evidence
+   - 0.50 - 0.84: partially answered or inferred
+   - 0.00 - 0.49: insufficient or speculative"""
+
+
+def format_context(documents: List[str], metas: List[Dict[str, Any]]) -> str:
+    blocks = []
+    for idx, doc in enumerate(documents):
+        meta = metas[idx] if idx < len(metas) else {}
+        page = meta.get("page")
+        header = f"[Source: {meta.get('source', 'Unknown Source')} | Page: {page if page is not None else 'N/A'}]"
+        blocks.append(f"{header}\n{doc}")
+    return "\n\n---\n\n".join(blocks)
+
+
+def generate_answer(question: str, context: str) -> AnswerWithCitations:
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", _SYSTEM),
+        ("human", "Context:\n{context}\n\nQuestion: {question}"),
+    ])
+    return (prompt | get_llm().with_structured_output(AnswerWithCitations)).invoke(
+        {"context": context, "question": question}
+    )
+
 
 def generate(state: AgentState) -> dict:
-    """
-    Synthesize a strictly grounded answer with structured citations,
-    source page provenance, and calibrated numerical confidence score (0.0 to 1.0).
-    """
-    print("---GENERATE WITH CITATIONS & CONFIDENCE---")
     question = state["question"]
     documents = state.get("documents", [])
-    doc_metadata = state.get("doc_metadata", [])
+    metas = state.get("doc_metadata", [])
 
-    # Format context with explicit index tags and source provenance
-    context_blocks = []
-    for idx, doc in enumerate(documents):
-        meta = doc_metadata[idx] if idx < len(doc_metadata) else {}
-        source = meta.get("source", "Unknown Source")
-        page = meta.get("page", None)
-        header = f"[Source: {source} | Page: {page if page is not None else 'N/A'}]"
-        context_blocks.append(f"{header}\n{doc}")
+    if not documents:
+        logger.info("generate: no context available")
+        return {"generation": NO_CONTEXT_ANSWER, "confidence": 0.0, "citations": []}
 
-    context = "\n\n---\n\n".join(context_blocks) if context_blocks else "No relevant context found."
-
-    llm = ChatOpenAI(model=settings.LLM_MODEL, temperature=settings.LLM_TEMPERATURE)
-    structured_generator = llm.with_structured_output(AnswerWithCitations)
-
-    system = """You are a rigorous, production-grade QA intelligence assistant.
-Your instructions:
-1. Answer the user question accurately and concisely, strictly based on the provided context.
-2. If the context does not contain enough information, truthfully state what is missing.
-3. Attach exact citations with the source filename, page number, and snippet for each factual claim.
-4. Provide a realistic confidence score between 0.0 and 1.0 representing how completely and unambiguously the context answers the user query.
-   - High (0.85 - 1.0): Fully answered with direct factual evidence in the context.
-   - Medium (0.50 - 0.84): Partially answered or inferred from context.
-   - Low (0.00 - 0.49): Insufficient evidence, speculative, or unknown."""
-
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system),
-        ("human", "Context:\n{context}\n\nQuestion: {question}")
-    ])
-
-    generator_chain = prompt | structured_generator
-
+    context = format_context(documents, metas)
     try:
-        res: AnswerWithCitations = generator_chain.invoke({"context": context, "question": question})
-        citations_data = [c.model_dump() for c in res.citations]
+        res = generate_answer(question, context)
         return {
             "generation": res.answer,
-            "confidence": res.confidence,
-            "citations": citations_data
+            "confidence": float(res.confidence),
+            "citations": [c.model_dump() for c in res.citations],
         }
-    except Exception as e:
-        print(f"Structured generation fallback: {e}")
-        # Graceful fallback to text parsing if structured generation hits a provider limitation
-        raw_prompt = ChatPromptTemplate.from_messages([
+    except Exception:
+        logger.exception("generate: structured output failed; falling back to plain text")
+        raw = (ChatPromptTemplate.from_messages([
             ("system", "Answer the question based strictly on the context. If unknown, say so."),
-            ("human", "Context:\n{context}\n\nQuestion: {question}")
-        ])
-        raw_chain = raw_prompt | llm
-        raw_resp = raw_chain.invoke({"context": context, "question": question})
+            ("human", "Context:\n{context}\n\nQuestion: {question}"),
+        ]) | get_llm()).invoke({"context": context, "question": question})
+        # Unstructured answers have no self-rated confidence; keep it below the cache threshold.
         return {
-            "generation": raw_resp.content if hasattr(raw_resp, "content") else str(raw_resp),
-            "confidence": 0.75,
-            "citations": []
+            "generation": getattr(raw, "content", str(raw)),
+            "confidence": 0.5,
+            "citations": [],
         }
