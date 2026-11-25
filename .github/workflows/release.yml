@@ -1,0 +1,74 @@
+name: Release
+
+# Run it from the Actions tab ("Release" → "Run workflow"), or push a tag like v2.1.0.
+# It reads the version from src/halo/__init__.py, checks it matches the tag,
+# runs the tests, builds the wheel + sdist, and publishes a GitHub release using
+# that version's section of CHANGELOG.md as the notes.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ""
+      CHROMA_PERSIST_DIR: /tmp/halo_chroma
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(python -c "import re;print(re.search(r'__version__ = \"(.+?)\"', open('src/halo/__init__.py').read()).group(1))")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$VERSION" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package version $VERSION"; exit 1
+          fi
+
+      - name: Stop if this version is already released
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "::error::Release ${{ steps.version.outputs.tag }} already exists. Bump __version__ first."; exit 1
+          fi
+
+      - name: Test
+        run: |
+          pip install -e ".[dev]" build
+          ruff check .
+          pytest -q
+
+      - name: Build wheel and sdist
+        run: python -m build
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v v="${{ steps.version.outputs.version }}" '
+            $0 ~ "^## \\[?v?" v "[]  ]" || $0 == "## " v || $0 == "## v" v { found=1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "Release ${{ steps.version.outputs.tag }}" > notes.md; fi
+          cat notes.md
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" dist/* \
+            --title "halo ${{ steps.version.outputs.tag }}" \
+            --notes-file notes.md \
+            --target "$GITHUB_SHA" \
+            --latest
