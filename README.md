@@ -1,155 +1,306 @@
 <p align="center">
-  <img src="./assets/hero.svg" width="100%" alt="halo — agentic RAG QA system">
+  <img src="./docs/assets/hero.svg" width="100%" alt="halo: ask anything, retrieve truth. Answers from your documents, checked and cited.">
 </p>
 
 <p align="center">
-  <a href="https://github.com/Nitro-Builds-Yash/halo/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Nitro-Builds-Yash/halo/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Python 3.11+" src="https://img.shields.io/badge/PYTHON-3.11%2B-3776ab?style=for-the-badge&logo=python&logoColor=white">
-  <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/LICENSE-MIT-8b949e?style=for-the-badge"></a>
+  <a href="https://github.com/Nitro-Builds-Yash/halo/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Nitro-Builds-Yash/halo/ci.yml?branch=main&style=for-the-badge&label=CI&logo=githubactions&logoColor=white"></a>
+  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white">
+  <img alt="LangGraph" src="https://img.shields.io/badge/LangGraph-CRAG-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white">
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-API-009688?style=for-the-badge&logo=fastapi&logoColor=white">
+  <img alt="Streamlit" src="https://img.shields.io/badge/Streamlit-UI-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white">
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white">
+  <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-8B949E?style=for-the-badge"></a>
 </p>
 
 <p align="center">
-  <strong>Ask anything. Retrieve truth.</strong><br>
-  A production-grade Corrective RAG (CRAG) system with autonomous quality gates, hybrid RRF retrieval, fast neural reranker gatekeepers, semantic caching, and strict hallucination reflection.
+  <a href="#-quickstart"><b>Quickstart</b></a> ·
+  <a href="#-how-it-works"><b>How it works</b></a> ·
+  <a href="#%EF%B8%8F-usage"><b>Usage</b></a> ·
+  <a href="#-api"><b>API</b></a> ·
+  <a href="#%EF%B8%8F-configuration"><b>Configuration</b></a> ·
+  <a href="#-evaluation"><b>Evaluation</b></a> ·
+  <a href="#%EF%B8%8F-project-structure"><b>Structure</b></a>
 </p>
 
----
+<br>
 
-## 🏛️ System Architecture
+**Halo** answers questions about your PDFs, text and Markdown files, and **checks every answer against its sources before returning it**. It finds evidence with hybrid search, filters it with a cross-encoder, searches the web when your documents fall short, and cites where each fact came from. If it still can't verify an answer, it says so and shows you the best evidence instead of guessing.
 
-Halo models retrieval and verification as a **LangGraph** state machine. Every answer, including ones produced after a web search or a retry, goes through the same verification step before it is returned.
+<br>
 
-```mermaid
-flowchart TD
-    Start([User Question]) --> CacheCheck{Semantic cache<br/>similarity >= 0.92?}
-    CacheCheck -- Hit --> ReturnCached([Return verified cached answer])
-    CacheCheck -- Miss --> Decompose[decompose_query<br/>only for comparative / multi-part questions]
+## ✨ Features
 
-    Decompose --> Retrieve[Hybrid retrieval<br/>Chroma dense + BM25, fused with RRF on chunk IDs]
-    Retrieve --> Rerank[Cross-encoder rerank<br/>ms-marco-MiniLM-L-6-v2]
-    Rerank --> Gate{Per-chunk gate}
-    Gate -- score >= 0.85 --> Keep[Keep, no LLM call]
-    Gate -- 0.40 to 0.85 --> BatchGrade[One batched LLM relevance call]
-    Gate -- below 0.40 --> Drop[Discard]
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <h3>🔎 Hybrid search</h3>
+      Dense vectors (Chroma) and BM25 keyword search, fused with Reciprocal Rank Fusion on shared chunk IDs. It finds both paraphrases and exact codes like <code>§4.1</code>.
+    </td>
+    <td width="33%" valign="top">
+      <h3>⚖️ Relevance gate</h3>
+      A cross-encoder scores every chunk. Confident chunks pass, weak ones are dropped, and only the uncertain middle goes to the LLM, in a single batched call.
+    </td>
+    <td width="33%" valign="top">
+      <h3>✅ Verified answers</h3>
+      Every answer is checked for grounding and for whether it actually answers the question, including answers built from web results or retries.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <h3>📎 Real citations</h3>
+      Answers cite the source file and page (or URL), with a quote. Citations to sources the model never saw are removed.
+    </td>
+    <td valign="top">
+      <h3>🔁 Self-correction</h3>
+      When local context is missing or an answer fails its check, Halo rewrites the query and searches the web, with hard limits so it never loops.
+    </td>
+    <td valign="top">
+      <h3>⚡ Semantic cache</h3>
+      Verified answers are reused for near-identical questions, and the cache is cleared automatically whenever your documents change.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <h3>🧰 Three ways in</h3>
+      A <code>halo</code> CLI, a Streamlit app with document management, and a FastAPI server with streaming (SSE).
+    </td>
+    <td valign="top">
+      <h3>🏠 Runs locally</h3>
+      Works with OpenAI or any OpenAI-compatible server (Ollama, vLLM, LM Studio), so you can keep everything on your machine.
+    </td>
+    <td valign="top">
+      <h3>🛡️ Production basics</h3>
+      Optional API key, upload limits and sanitizing, timeouts, logging, Docker Compose, and a tested CI pipeline.
+    </td>
+  </tr>
+</table>
 
-    Keep --> Enough{Relevant context?}
-    BatchGrade --> Enough
-    Enough -- Yes --> Generate[generate<br/>answer + citations + confidence]
-    Enough -- No, rewrite allowed --> Transform[transform_query<br/>question kept, search query rewritten]
-    Transform --> WebSearch[Web search<br/>Tavily, or DuckDuckGo<br/>each result cited by URL]
-    WebSearch --> Generate
-
-    Generate --> Reflect{reflect<br/>grounded? answers the question?}
-    Reflect -- Verified --> CacheStore[Store in cache] --> End([Verified answer])
-    Reflect -- Not verified, retry allowed --> Transform
-    Reflect -- Not verified, limits reached --> Fallback[Deterministic fallback<br/>best excerpts + disclaimer] --> End
-```
-
----
-
-## 📊 Evaluation
-
-Halo ships with a real evaluation harness ([`evals/run_eval.py`](./evals/run_eval.py)) that runs **both** a naive RAG baseline (dense top-k + one generation) and the full Halo graph on the same questions over your indexed corpus, then scores them with [RAGAS](https://docs.ragas.io) (faithfulness, response relevancy, context precision, context recall). It also reports the fallback rate, the web-search rate and average latency.
+## ⚡ Quickstart
 
 ```bash
-pip install -e ".[eval]"
-python -m src.rag.ingest --dir ./data                       # index your documents
-cp evals/dataset.example.jsonl evals/dataset.jsonl          # write 30-50 Q&A pairs about them
-python -m evals.run_eval --dataset evals/dataset.jsonl      # results -> evals/results/*.json
+git clone https://github.com/Nitro-Builds-Yash/halo && cd halo
+pip install -e ".[ui]"            # add ,rerank for the cross-encoder (installs torch)
+cp .env.example .env              # then set OPENAI_API_KEY
+
+halo ingest ./my-docs             # index .pdf / .txt / .md files
+halo                              # start chatting
 ```
 
-> Benchmark results will be published here once they've been run on a real corpus.
-
----
-
-## 🚀 Key Engineering Pillars
-
-1. **Hybrid retrieval (dense + BM25 with RRF)**: dense vectors and BM25Plus keyword search are fused with Reciprocal Rank Fusion ($\text{score} = \sum \frac{1}{60 + \text{rank}}$) on stable chunk IDs, so exact acronyms and section codes are still found.
-2. **Per-chunk cross-encoder gatekeeper**: each chunk's sigmoid-normalised cross-encoder score decides whether it is kept, discarded, or sent to the LLM grader, so confident chunks never cost an LLM call.
-3. **Single-call batched grading**: borderline chunks are graded together in one structured-output call (`BatchChunkGrading`) instead of one call per chunk.
-4. **Verification on every answer, with hard ceilings**: grounding and answer checks run after every generation and fail closed if a grader errors. `MAX_REWRITES` / `MAX_REGENERATIONS` cap the retries, after which a deterministic fallback returns the best cited excerpts.
-5. **Real-time SSE streaming**: node-level status events stream as the graph runs, and only the final, verified answer is streamed as the message.
-6. **Semantic query cache**: verified, high-confidence answers are reused for near-identical questions. The cache is cleared automatically whenever documents are ingested, so stale answers are never served.
-
----
-
-## 🛠️ Quickstart & Usage
-
-### 1. Installation
-```bash
-git clone https://github.com/Nitro-Builds-Yash/halo
-cd halo
-pip install -r requirements.txt      # full install incl. Streamlit + cross-encoder (torch)
-# or: pip install -e ".[ui]"         # lighter, without the reranker
-cp .env.example .env                 # add OPENAI_API_KEY (and optionally TAVILY_API_KEY, API_KEY)
-python -m src.rag.ingest --dir ./data   # index .pdf / .txt / .md files
+```text
+halo › What is the refund window?
+🔍 Hybrid retrieval  Chroma + BM25 → RRF → cross-encoder
+⚖️  Relevance gate   per-chunk scores + batched LLM grading
+✍️  Answer synthesis citations + confidence
+🧪 Verification: useful
+╭─────────────── Verified answer  92% confidence ───────────────╮
+│ Refunds are accepted within 30 days of purchase with the      │
+│ original receipt.                                             │
+╰───────────────────────────────────────────────────────────────╯
+ Source        Page  Evidence
+ policy.pdf    4     "returns are permitted within 30 days…"
 ```
 
-### Or run everything with Docker
+<details>
+<summary><b>🐳 Run with Docker</b></summary>
+<br>
+
 ```bash
-cp .env.example .env    # add your keys
+cp .env.example .env              # add your keys
 docker compose up --build
-# API: http://localhost:8000/docs   UI: http://localhost:8501
 ```
-Build a smaller image without the torch reranker with `docker compose build --build-arg RERANK=0`.
 
-### Run fully locally (no OpenAI)
-Point Halo at any OpenAI-compatible server, e.g. [Ollama](https://ollama.com):
+| Service | URL |
+| --- | --- |
+| API + interactive docs | http://localhost:8000/docs |
+| Streamlit app | http://localhost:8501 |
+
+The API and app share one Chroma server, so documents uploaded in either show up in both. Build a smaller image without torch with `docker compose build --build-arg RERANK=0`.
+</details>
+
+<details>
+<summary><b>🏠 Run fully local with Ollama (no OpenAI)</b></summary>
+<br>
+
 ```bash
 ollama pull llama3.1 && ollama pull nomic-embed-text
-# in .env:
+```
+
+```dotenv
+# .env
 LLM_BASE_URL=http://localhost:11434/v1
 LLM_MODEL=llama3.1
 EMBEDDING_MODEL=nomic-embed-text
 ```
-Small local models are less reliable at structured output, so expect more fallbacks than with GPT-4o-mini. If you switch embedding models, re-ingest your documents.
 
-### 2. Run the Streamlit Dashboard
-```bash
-streamlit run streamlit_app.py
+Small local models are less reliable at structured output, so expect more fallback answers than with GPT-4o-mini. Re-ingest your documents after changing the embedding model.
+</details>
+
+## 🧠 How it works
+
+<p align="center">
+  <img src="./docs/assets/pipeline.svg" width="100%" alt="Pipeline: question, semantic cache, query plan, hybrid search, relevance gate, generate, verify, answer. If there is no relevant context, the query is rewritten and the web is searched. If an answer is not verified it is retried once, then falls back to cited excerpts.">
+</p>
+
+1. **Semantic cache:** a question that closely matches one already answered and verified (cosine similarity ≥ 0.92) is returned immediately.
+2. **Query plan:** comparative or multi-part questions are split into up to three focused sub-questions.
+3. **Hybrid search:** each sub-question searches Chroma and BM25. Results are fused with RRF and reranked by a cross-encoder.
+4. **Relevance gate:** per chunk, a score ≥ 0.85 is kept, < 0.40 is dropped, and anything in between is graded by the LLM in one batched call.
+5. **Generate:** the answer is written strictly from the kept context, with citations and a confidence score.
+6. **Verify:** two checks, whether every claim is supported by the sources and whether the answer resolves the question. If a checker errors, the answer counts as **not** verified.
+
+When there's no relevant local context, or an answer fails verification, Halo rewrites the query and adds web results (at most one rewrite and one retry). If it still can't verify an answer, it returns the best excerpts with a clear disclaimer.
+
+<details>
+<summary>View the graph as Mermaid</summary>
+<br>
+
+```mermaid
+flowchart LR
+    Q([Question]) --> C{Cache hit?}
+    C -- yes --> A([Verified answer])
+    C -- no --> P[Query plan] --> R[Hybrid search<br/>Chroma + BM25 → RRF → rerank] --> G{Relevance gate}
+    G -- relevant context --> Gen[Generate]
+    G -- none --> W[Rewrite query] --> S[Web search] --> Gen
+    Gen --> V{Verify}
+    V -- verified --> A
+    V -- not verified, retry left --> W
+    V -- limits reached --> F([Fallback: excerpts + disclaimer])
 ```
+</details>
 
-### 3. Run the Interactive Terminal CLI
-```bash
-python run_cli.py
-```
+## 🖥️ Usage
 
-### 4. Run the Production API Server
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
+### Command line
 
-### 5. Execute Evaluation & Test Suite
-```bash
-# Unit tests (no API keys needed - all LLM and search calls are mocked)
-pip install -e ".[dev]"
-pytest
+| Command | What it does |
+| --- | --- |
+| `halo` | Interactive chat with live pipeline steps |
+| `halo ask "question"` | Answer one question and exit |
+| `halo ingest ./docs a.pdf` | Index files and folders (`.pdf`, `.txt`, `.md`). Re-ingesting a file replaces it. |
+| `halo docs` / `halo docs rm a.pdf` | List indexed documents / remove one |
+| `halo serve [--reload]` | Start the API on port 8000 |
+| `halo ui` | Start the Streamlit app on port 8501 |
 
-# Real RAGAS evaluation (see "Evaluation" above)
-python -m evals.run_eval --dataset evals/dataset.jsonl
-```
+### Web app
 
----
+`halo ui` opens a chat interface where you can upload and delete documents, watch each pipeline step as it runs, and expand the citations, confidence and agent trace for every answer.
 
-## 📄 API Endpoints
+## 🔌 API
 
 | Method | Endpoint | Description |
 | --- | --- | --- |
-| `GET` | `/health` | Service health and capabilities |
-| `POST` | `/api/v1/query` | Full CRAG run (semantic cache first) |
-| `POST` | `/api/v1/chat/stream` | Server-Sent Events: status per node, then the final verified answer |
-| `POST` | `/api/v1/documents/upload` | Upload `.pdf` / `.txt` / `.md` (size-limited); re-uploading a filename replaces its old chunks |
-| `GET` | `/api/v1/documents` | List indexed documents with chunk counts |
+| `GET` | `/health` | Service status and capabilities |
+| `POST` | `/api/v1/query` | Answer a question (semantic cache first) |
+| `POST` | `/api/v1/chat/stream` | Server-Sent Events: one status event per step, then the final verified answer |
+| `POST` | `/api/v1/documents/upload` | Upload `.pdf` / `.txt` / `.md` files (size-limited) |
+| `GET` | `/api/v1/documents` | List indexed documents |
 | `DELETE` | `/api/v1/documents/{source}` | Remove a document from both indexes |
 
-If `API_KEY` is set in `.env`, all `/api/v1/*` routes require an `X-API-Key` header. Allowed browser origins are set with `CORS_ORIGINS`. Every threshold and limit is configurable in `.env` (see [`.env.example`](./.env.example)).
+```bash
+curl -s localhost:8000/api/v1/query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What is the refund window?"}'
+```
 
----
+<details>
+<summary>Example response</summary>
 
-## License
+```json
+{
+  "question": "What is the refund window?",
+  "generation": "Refunds are accepted within 30 days of purchase with the original receipt.",
+  "confidence": 0.92,
+  "citations": [{ "source": "policy.pdf", "page": 4, "snippet": "returns are permitted within 30 days" }],
+  "verdict": "useful",
+  "retry_count": 0,
+  "rewrite_count": 0,
+  "web_search_used": false,
+  "is_fallback": false,
+  "cached": false
+}
+```
+</details>
+
+If `API_KEY` is set, every `/api/v1/*` request needs an `X-API-Key` header. Interactive docs are at `/docs`.
+
+## ⚙️ Configuration
+
+All settings live in `.env`; see [`.env.example`](./.env.example) for the full list. The ones you're most likely to change:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | – | OpenAI key (not needed with `LLM_BASE_URL`) |
+| `LLM_MODEL` / `EMBEDDING_MODEL` | `gpt-4o-mini` / `text-embedding-3-small` | Models for answers and embeddings |
+| `LLM_BASE_URL` | – | Any OpenAI-compatible server, e.g. Ollama |
+| `TAVILY_API_KEY` | – | Web search via Tavily (falls back to DuckDuckGo) |
+| `TOP_K_RETRIEVE` | `4` | Chunks retrieved per sub-question |
+| `GATE_HIGH` / `GATE_LOW` | `0.85` / `0.40` | Relevance-gate thresholds |
+| `MAX_REWRITES` / `MAX_REGENERATIONS` | `1` / `1` | Self-correction limits |
+| `CACHE_SIMILARITY` | `0.92` | How similar a question must be to reuse an answer |
+| `API_KEY` | – | Require `X-API-Key` on the API |
+| `CHROMA_HOST` | – | Use a Chroma server instead of local files |
+
+## 📊 Evaluation
+
+Halo includes a real evaluation harness. It runs a **naive RAG baseline** (dense top-k + one generation) and the **full Halo pipeline** on the same questions over your documents, then scores both with [RAGAS](https://docs.ragas.io): faithfulness, response relevancy, context precision and context recall. It also reports fallback rate, web-search rate and latency.
+
+```bash
+pip install -e ".[eval]"
+halo ingest ./my-docs
+cp evals/dataset.example.jsonl evals/dataset.jsonl     # write 30–50 Q&A pairs about your documents
+python -m evals.run_eval --dataset evals/dataset.jsonl # results → evals/results/*.json
+```
+
+> [!NOTE]
+> Benchmark results will be published here once they've been run on a real corpus.
+
+## 🗂️ Project structure
+
+```text
+halo/
+├── src/halo/
+│   ├── agents/          # LangGraph pipeline
+│   │   ├── graph.py     #   graph wiring and routing
+│   │   ├── nodes/       #   decompose, retrieve, grade, rewrite, web search, generate, reflect, fallback
+│   │   ├── runner.py    #   run a question with the semantic cache in front
+│   │   └── state.py     #   shared graph state
+│   ├── rag/             # ingestion, Chroma + BM25 indexes, hybrid retriever, cross-encoder
+│   ├── api/             # FastAPI server and schemas
+│   ├── core/            # settings, model clients, semantic cache, logging
+│   ├── tools/           # web search
+│   ├── ui/app.py        # Streamlit app
+│   └── cli.py           # the `halo` command
+├── evals/               # RAGAS evaluation harness
+├── tests/               # offline test suite (LLMs and search mocked)
+├── docs/                # images and interview notes
+├── Dockerfile · docker-compose.yml
+└── pyproject.toml
+```
+
+## 🧪 Development
+
+```bash
+pip install -e ".[dev]"
+pytest            # no API keys needed: every LLM and search call is mocked
+ruff check .
+```
+
+CI runs lint and the full test suite on every push and pull request. `main` is protected, so changes go in through pull requests with passing checks.
+
+## 🗺️ Roadmap
+
+- [x] Corrective RAG graph with verification on every answer
+- [x] Hybrid search, per-chunk relevance gate, batched grading
+- [x] Document management, Docker, local-LLM support
+- [x] Real RAGAS evaluation harness
+- [ ] Publish benchmark results on a public corpus
+- [ ] Multi-turn chat with conversation memory
+- [ ] Sentence-level citations linked to PDF pages
+
+## 📄 License
 
 Released under the [MIT License](./LICENSE).
 
 <p align="center">
-  <img src="./assets/live-status.svg" width="100%" alt="halo live status">
+  <img src="./docs/assets/status.svg" width="100%" alt="halo: hybrid search, relevance gate, every answer checked against its sources">
 </p>

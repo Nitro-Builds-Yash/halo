@@ -1,13 +1,13 @@
 import pytest
 
-from src.agents.graph import decide_to_generate
-from src.agents.nodes import grading
-from src.agents.nodes import web_search as web_search_node
-from src.agents.nodes.query_decompose import needs_decomposition
-from src.agents.nodes.reflection import calibrate_confidence, route_after_reflect
-from src.agents.nodes.retrieval import normalize_rerank_score
-from src.tools import search as search_tool
-from src.tools.search import _normalize
+from halo.agents.graph import decide_to_generate
+from halo.agents.nodes import grading
+from halo.agents.nodes import web_search as web_search_node
+from halo.agents.nodes.query_decompose import needs_decomposition
+from halo.agents.nodes.reflection import calibrate_confidence, route_after_reflect
+from halo.agents.nodes.retrieval import normalize_rerank_score
+from halo.tools import search as search_tool
+from halo.tools.search import _normalize
 
 
 def test_rerank_normalization_is_monotonic():
@@ -115,7 +115,7 @@ def test_web_search_replaces_previous_web_results(monkeypatch):
 
 
 def test_citations_to_unknown_sources_are_dropped():
-    from src.agents.nodes.generation import filter_citations
+    from halo.agents.nodes.generation import filter_citations
 
     metas = [{"source": "policy.pdf"}, {"source": "https://example.com/a"}]
     cits = [
@@ -129,7 +129,7 @@ def test_citations_to_unknown_sources_are_dropped():
 
 
 def test_context_is_capped():
-    from src.agents.nodes.generation import format_context
+    from halo.agents.nodes.generation import format_context
 
     docs = ["a" * 5000, "b" * 5000, "c" * 5000]
     metas = [{"source": f"s{i}"} for i in range(3)]

@@ -5,7 +5,7 @@ Both systems actually run. Nothing is simulated or clamped.
 
 Usage
 -----
-1. Ingest a corpus:         python -m src.rag.ingest --dir ./data
+1. Ingest a corpus:         halo ingest ./data
 2. Write a dataset (JSONL): one object per line with
        {"question": "...", "reference": "hand-written correct answer"}
    Include some questions the corpus can NOT answer (reference: "Not in the documents.").
@@ -23,11 +23,11 @@ from typing import Any, Dict, List
 
 from langchain_core.prompts import ChatPromptTemplate
 
-from src.agents.graph import graph
-from src.agents.state import initial_state
-from src.core.config import settings
-from src.core.llm import get_embeddings, get_llm
-from src.rag.vectorstore import get_vectorstore
+from halo.agents.graph import graph
+from halo.agents.state import initial_state
+from halo.core.config import settings
+from halo.core.llm import get_embeddings, get_llm
+from halo.rag.vectorstore import get_vectorstore
 
 NAIVE_PROMPT = ChatPromptTemplate.from_messages([
     ("system", "Answer the question using the context. If the context doesn't contain the answer, say so."),

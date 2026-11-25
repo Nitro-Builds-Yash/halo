@@ -1,12 +1,12 @@
 """End-to-end routing tests for the CRAG graph with every LLM / search call mocked."""
 import pytest
 
-from src.agents import graph as graph_module
-from src.agents.nodes import generation, grading, query_transform, reflection, retrieval
-from src.agents.nodes.generation import NO_CONTEXT_ANSWER
-from src.agents.schemas import AnswerWithCitations, Citation
-from src.agents.state import initial_state
-from src.tools import search as search_tool
+from halo.agents import graph as graph_module
+from halo.agents.nodes import generation, grading, query_transform, reflection, retrieval
+from halo.agents.nodes.generation import NO_CONTEXT_ANSWER
+from halo.agents.schemas import AnswerWithCitations, Citation
+from halo.agents.state import initial_state
+from halo.tools import search as search_tool
 
 QUESTION = "What is the refund window?"
 
