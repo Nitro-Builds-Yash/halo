@@ -8,18 +8,18 @@ logger = get_logger(__name__)
 
 def _normalize(raw, provider: str) -> List[Dict[str, str]]:
     """Turn the different result shapes of Tavily/DuckDuckGo wrappers into
-    a list of {"content", "url", "title"} dicts."""
+    a list of {"content", "url", "title"} dicts (Tavily: content/url, ddgs: body/href)."""
     if isinstance(raw, dict) and "results" in raw:  # langchain-tavily TavilySearch
         raw = raw["results"]
     results: List[Dict[str, str]] = []
     if isinstance(raw, list):
         for r in raw:
             if isinstance(r, dict):
-                content = r.get("content") or r.get("snippet") or ""
+                content = r.get("content") or r.get("snippet") or r.get("body") or ""
                 if content.strip():
                     results.append({
                         "content": content.strip(),
-                        "url": r.get("url") or r.get("link") or provider,
+                        "url": r.get("url") or r.get("link") or r.get("href") or provider,
                         "title": r.get("title", ""),
                     })
             elif str(r).strip():
@@ -32,17 +32,12 @@ def _normalize(raw, provider: str) -> List[Dict[str, str]]:
 def search_web(query: str, max_results: int = 3) -> List[Dict[str, str]]:
     """Run a web search. Raises on provider errors; callers decide how to handle them."""
     if settings.TAVILY_API_KEY:
-        try:
-            from langchain_tavily import TavilySearch
+        from langchain_tavily import TavilySearch
 
-            tool = TavilySearch(max_results=max_results, tavily_api_key=settings.TAVILY_API_KEY)
-        except ImportError:  # older installs
-            from langchain_community.tools.tavily_search import TavilySearchResults
-
-            tool = TavilySearchResults(max_results=max_results)
+        tool = TavilySearch(max_results=max_results, tavily_api_key=settings.TAVILY_API_KEY)
         return _normalize(tool.invoke({"query": query}), "Tavily")[:max_results]
 
     logger.warning("TAVILY_API_KEY not set; falling back to DuckDuckGo")
-    from langchain_community.tools import DuckDuckGoSearchRun
+    from ddgs import DDGS
 
-    return _normalize(DuckDuckGoSearchRun().invoke(query), "DuckDuckGo")[:max_results]
+    return _normalize(DDGS().text(query, max_results=max_results), "DuckDuckGo")[:max_results]
