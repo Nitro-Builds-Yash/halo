@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/Nitro-Builds-Yash/halo/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Nitro-Builds-Yash/halo/ci.yml?branch=main&style=for-the-badge&label=CI&logo=githubactions&logoColor=white"></a>
+  <a href="https://github.com/Nitro-Builds-Yash/halo/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Nitro-Builds-Yash/halo?style=for-the-badge&label=release&color=238636"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white">
   <img alt="LangGraph" src="https://img.shields.io/badge/LangGraph-CRAG-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-API-009688?style=for-the-badge&logo=fastapi&logoColor=white">
@@ -286,6 +287,10 @@ ruff check .
 ```
 
 CI runs lint and the full test suite on every push and pull request. `main` is protected, so changes go in through pull requests with passing checks.
+
+## 📦 Releases
+
+Each release is listed on the [Releases page](https://github.com/Nitro-Builds-Yash/halo/releases) with notes from [`CHANGELOG.md`](./CHANGELOG.md) and a wheel you can `pip install`. To publish a new one, bump `__version__` in `src/halo/__init__.py`, add a section to `CHANGELOG.md`, merge, then run **Actions → Release → Run workflow**.
 
 ## 🗺️ Roadmap
 
