@@ -98,6 +98,8 @@ def test_search_result_normalization():
     assert _normalize([{"content": "b", "url": "v"}], "Tavily")[0]["url"] == "v"
     assert _normalize("plain text", "DuckDuckGo") == [{"content": "plain text", "url": "DuckDuckGo", "title": ""}]
     assert _normalize("", "DuckDuckGo") == []
+    ddgs = [{"title": "T", "href": "https://x", "body": "text"}]
+    assert _normalize(ddgs, "DuckDuckGo") == [{"content": "text", "url": "https://x", "title": "T"}]
 
 
 def test_web_search_replaces_previous_web_results(monkeypatch):

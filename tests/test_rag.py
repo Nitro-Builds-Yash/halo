@@ -138,3 +138,34 @@ def test_list_and_delete_sources(tmp_path, monkeypatch):
     assert ingest.delete_source("a.txt") == n_chunks
     assert ingest.list_sources() == [] and vs.store == {}
     assert ingest.delete_source("a.txt") == 0
+
+
+def test_text_loading_handles_encodings(tmp_path):
+    utf8 = tmp_path / "a.md"
+    utf8.write_text("Café ✓", encoding="utf-8")
+    win = tmp_path / "b.txt"
+    win.write_bytes("Café – résumé".encode("cp1252"))
+    bom16 = tmp_path / "c.txt"
+    bom16.write_text("hello", encoding="utf-16")
+    empty = tmp_path / "d.txt"
+    empty.write_text("   ")
+
+    assert ingest.load_file_with_metadata(str(utf8))[0].page_content == "Café ✓"
+    assert ingest.load_file_with_metadata(str(win))[0].page_content == "Café – résumé"
+    assert ingest.load_file_with_metadata(str(bom16))[0].page_content == "hello"
+    assert ingest.load_file_with_metadata(str(empty)) == []
+    doc = ingest.load_file_with_metadata(str(utf8), "renamed.md")[0]
+    assert doc.metadata == {"source": "renamed.md", "page": 1}
+
+
+def test_pdf_loading_uses_one_based_pages():
+    import os
+
+    import pytest
+
+    pytest.importorskip("pypdf")
+    pdf = os.path.join(os.path.dirname(__file__), "..", "docs", "interview", "HALO_CRAG_INTERVIEW_DOSSIER.pdf")
+    docs = ingest.load_file_with_metadata(pdf)
+    assert len(docs) > 1
+    assert docs[0].metadata == {"source": "HALO_CRAG_INTERVIEW_DOSSIER.pdf", "page": 1}
+    assert [d.metadata["page"] for d in docs] == sorted(d.metadata["page"] for d in docs)

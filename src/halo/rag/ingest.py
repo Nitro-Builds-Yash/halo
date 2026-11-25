@@ -3,6 +3,7 @@ import hashlib
 import os
 from typing import List, Tuple
 
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from halo.core.config import settings
@@ -19,31 +20,35 @@ def chunk_id(source: str, page, index: int, content: str) -> str:
     return hashlib.sha256(raw).hexdigest()[:32]
 
 
-def load_file_with_metadata(file_path: str, source_name: str | None = None):
+def _read_text(path: str) -> str:
+    with open(path, "rb") as f:
+        raw = f.read()
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):  # UTF-16 byte-order mark
+        return raw.decode("utf-16")
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw.decode("cp1252", errors="replace")  # common for Windows-made text files
+
+
+def load_file_with_metadata(file_path: str, source_name: str | None = None) -> List[Document]:
+    """Load a .pdf / .txt / .md file into one Document per page (one for text files)."""
     ext = os.path.splitext(file_path)[1].lower()
     source = source_name or os.path.basename(file_path)
 
     if ext == ".pdf":
-        from langchain_community.document_loaders import PyPDFLoader
+        from pypdf import PdfReader
 
-        docs = PyPDFLoader(file_path).load()
-        for d in docs:
-            # PyPDFLoader pages are 0-indexed; citations should match what readers see.
-            page = d.metadata.get("page", d.metadata.get("page_number"))
-            d.metadata = {"source": source, "page": int(page) + 1 if page is not None else None}
-    elif ext in (".txt", ".md"):
-        from langchain_community.document_loaders import TextLoader
-
-        docs = TextLoader(file_path, autodetect_encoding=True).load()
-        for d in docs:
-            d.metadata = {"source": source, "page": 1}
-    else:
-        raise ValueError(f"Unsupported file format: {ext}")
-
-    # Chroma rejects None metadata values.
-    for d in docs:
-        d.metadata = {k: v for k, v in d.metadata.items() if v is not None}
-    return docs
+        docs = []
+        for number, page in enumerate(PdfReader(file_path).pages, start=1):  # 1-based, as readers see it
+            text = (page.extract_text() or "").strip()
+            if text:
+                docs.append(Document(page_content=text, metadata={"source": source, "page": number}))
+        return docs
+    if ext in (".txt", ".md"):
+        text = _read_text(file_path)
+        return [Document(page_content=text, metadata={"source": source, "page": 1})] if text.strip() else []
+    raise ValueError(f"Unsupported file format: {ext}")
 
 
 def list_sources():
