@@ -1,5 +1,7 @@
-from typing import List, Dict, Any, Optional, Literal
+from typing import List, Literal, Optional
+
 from pydantic import BaseModel, Field
+
 
 class ChunkGrade(BaseModel):
     chunk_index: int = Field(description="Index of the chunk in the evaluation batch")

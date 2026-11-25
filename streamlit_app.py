@@ -1,14 +1,19 @@
 import os
+import shutil
 import sys
 import tempfile
+
 import streamlit as st
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from src.agents.graph import graph
-from src.rag.ingest import ingest_file_list
+from src.agents.runner import cache_payload, cached_answer, should_cache, summarize, used_web_search
+from src.agents.state import initial_state
 from src.core.config import settings
+from src.core.semantic_cache import SemanticCache
+from src.rag.ingest import ingest_file_list
 
 st.set_page_config(
     page_title="Halo — Production Agentic CRAG",
@@ -103,19 +108,24 @@ with st.sidebar:
             st.warning("Please select at least one document first.")
         else:
             with st.spinner("Building Dense Vectors + BM25 inverted index..."):
-                temp_paths = []
+                temp_paths, source_names = [], []
                 temp_dir = tempfile.mkdtemp(prefix="halo_st_")
                 try:
-                    for f in uploaded_files:
-                        path = os.path.join(temp_dir, f.name)
+                    for i, f in enumerate(uploaded_files):
+                        name = os.path.basename(f.name.replace("\\", "/"))
+                        path = os.path.join(temp_dir, f"{i}_{name}")
                         with open(path, "wb") as out:
                             out.write(f.getbuffer())
                         temp_paths.append(path)
-                    
-                    num_docs, num_chunks = ingest_file_list(temp_paths)
-                    st.success(f"✅ Ingested {num_docs} files into {num_chunks} hybrid chunks!")
+                        source_names.append(name)
+
+                    num_docs, num_chunks = ingest_file_list(temp_paths, source_names)
+                    SemanticCache.get_instance().clear()
+                    st.success(f"✅ Ingested {num_docs} page(s) into {num_chunks} hybrid chunks!")
                 except Exception as e:
                     st.error(f"❌ Ingestion error: {e}")
+                finally:
+                    shutil.rmtree(temp_dir, ignore_errors=True)
 
     st.markdown("---")
     st.markdown("### ⚙️ Pipeline Specifications")
@@ -123,7 +133,7 @@ with st.sidebar:
             f"**Retrieval:** `Hybrid RRF (BM25 + Chroma)`\n\n"
             f"**Reranker:** `ms-marco-MiniLM-L-6-v2`\n\n"
             f"**Top-K Chunks:** `{settings.TOP_K_RETRIEVE}`\n\n"
-            f"**Reflection Retries:** `{settings.MAX_RETRIES}`")
+            f"**Max Retries / Web Rewrites:** `{settings.MAX_REGENERATIONS}` / `{settings.MAX_REWRITES}`")
     
     if st.button("🧹 Clear Chat History", use_container_width=True):
         st.session_state.messages = []
@@ -174,11 +184,15 @@ if user_query:
 
     with st.chat_message("assistant"):
         status_box = st.status("⚡ Executing Agentic CRAG Pipeline...", expanded=True)
-        inputs = {"question": user_query, "retry_count": 0}
-        
+        cache = SemanticCache.get_instance()
+        hit = cached_answer(user_query, cache)
+
         final_state = {}
         with status_box:
-            for output in graph.stream(inputs):
+            if hit:
+                st.markdown(f'<div class="step-log">⚡ <b>Semantic cache hit</b> — similarity {hit["cached_similarity"]}</div>', unsafe_allow_html=True)
+                final_state = {**hit, "doc_metadata": []}
+            for output in ([] if hit else graph.stream(initial_state(user_query))):
                 for node_name, state_update in output.items():
                     if node_name == "decompose_query":
                         sub_qs = state_update.get("sub_questions", [])
@@ -193,14 +207,23 @@ if user_query:
                         st.markdown('<div class="step-log">🌐 <b>Step 5: Web Search</b> — Querying Tavily/DuckDuckGo fallback tool</div>', unsafe_allow_html=True)
                     elif node_name == "generate":
                         st.markdown('<div class="step-log">✍️ <b>Step 6: Answer Synthesis</b> — Generating verified answer with confidence & citations</div>', unsafe_allow_html=True)
+                    elif node_name == "reflect":
+                        verdict = (state_update or {}).get("verdict", "")
+                        st.markdown(f'<div class="step-log">🧪 <b>Verification</b> — grounding & answer check: <i>{verdict}</i></div>', unsafe_allow_html=True)
+                    elif node_name == "graceful_fallback":
+                        st.markdown('<div class="step-log" style="border-left-color: #f59e0b;">🛟 <b>Fallback</b> — returning best excerpts with a disclaimer</div>', unsafe_allow_html=True)
                     elif node_name == "increment_retry":
                         st.markdown('<div class="step-log" style="border-left-color: #ef4444;">⚠️ <b>Quality Gate Check:</b> Reflection triggered retry loop...</div>', unsafe_allow_html=True)
-                    final_state.update(state_update)
+                    final_state.update(state_update or {})
 
         status_box.update(label="✅ Halo Pipeline Finished", state="complete", expanded=False)
         
         answer = final_state.get("generation", "No generation produced.")
-        confidence = final_state.get("confidence", 0.85)
+        confidence = final_state.get("confidence", 0.0)
+        if not hit:
+            result = summarize(user_query, final_state)
+            if should_cache(result):
+                cache.store(user_query, cache_payload(final_state))
         citations = final_state.get("citations", [])
 
         st.markdown(answer)
@@ -226,7 +249,7 @@ if user_query:
 
         meta = {
             "retained_chunks": len(final_state.get("documents", [])),
-            "web_search_fallback": final_state.get("web_search_needed", False),
+            "web_search_fallback": hit.get("web_search_used", False) if hit else used_web_search(final_state),
             "reflection_retries": final_state.get("retry_count", 0),
             "sub_questions": final_state.get("sub_questions", [])
         }

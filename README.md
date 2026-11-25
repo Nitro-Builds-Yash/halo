@@ -3,10 +3,9 @@
 </p>
 
 <p align="center">
-  [![Download halo](https://img.shields.io/badge/DOWNLOAD-v2.0-0969da?style=for-the-badge&logo=python&logoColor=white)](https://github.com/Nitro-Builds-Yash/halo/releases/latest)
-  [![Latest release](https://img.shields.io/github/v/release/Nitro-Builds-Yash/halo?display_name=tag&style=for-the-badge&label=RELEASE&color=238636)](https://github.com/Nitro-Builds-Yash/halo/releases/latest)
-  ![Python 3.11+](https://img.shields.io/badge/PYTHON-3.11%2B-3776ab?style=for-the-badge&logo=python&logoColor=white)
-  [![MIT license](https://img.shields.io/badge/LICENSE-MIT-8b949e?style=for-the-badge)](./LICENSE)
+  <a href="https://github.com/Nitro-Builds-Yash/halo/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Nitro-Builds-Yash/halo/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Python 3.11+" src="https://img.shields.io/badge/PYTHON-3.11%2B-3776ab?style=for-the-badge&logo=python&logoColor=white">
+  <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/LICENSE-MIT-8b949e?style=for-the-badge"></a>
 </p>
 
 <p align="center">
@@ -18,65 +17,59 @@
 
 ## 🏛️ System Architecture
 
-Halo models the retrieval and verification lifecycle as a state machine using **LangGraph**:
+Halo models retrieval and verification as a **LangGraph** state machine. Every answer, including ones produced after a web search or a retry, goes through the same verification step before it is returned.
 
 ```mermaid
 flowchart TD
-    Start([User Question]) --> CacheCheck{Semantic Cache?}
-    CacheCheck -- Match > 0.92 --> ReturnCached[Instant Response <50ms]
-    CacheCheck -- Cache Miss --> Decompose[decompose_query]
-    
-    Decompose --> Retrieve[Hybrid RRF Retrieval<br/>ChromaDB + Sparse BM25]
-    Retrieve --> CrossEncoder[Cross-Encoder Gatekeeper<br/>ms-marco-MiniLM-L-6-v2]
-    
-    CrossEncoder -- Confidence >= 0.85 --> FastTrack[Bypass LLM Grader]
-    CrossEncoder -- Borderline 0.40 - 0.85 --> BatchGrade[Single-Call Batch Grading<br/>Pydantic Structured Output]
-    
-    FastTrack --> Generate[generate<br/>Citations & Confidence]
-    BatchGrade -- Relevant Context Found --> Generate
-    BatchGrade -- Context Insufficient --> CheckRewrite{rewrite_count >= MAX_REWRITES?}
-    
-    CheckRewrite -- Yes (Circuit Breaker) --> Generate
-    CheckRewrite -- No --> TransformQuery[transform_query]
-    TransformQuery --> WebSearch[Fallback Web Search<br/>Tavily / DuckDuckGo]
+    Start([User Question]) --> CacheCheck{Semantic cache<br/>similarity >= 0.92?}
+    CacheCheck -- Hit --> ReturnCached([Return verified cached answer])
+    CacheCheck -- Miss --> Decompose[decompose_query<br/>only for comparative / multi-part questions]
+
+    Decompose --> Retrieve[Hybrid retrieval<br/>Chroma dense + BM25, fused with RRF on chunk IDs]
+    Retrieve --> Rerank[Cross-encoder rerank<br/>ms-marco-MiniLM-L-6-v2]
+    Rerank --> Gate{Per-chunk gate}
+    Gate -- score >= 0.85 --> Keep[Keep, no LLM call]
+    Gate -- 0.40 to 0.85 --> BatchGrade[One batched LLM relevance call]
+    Gate -- below 0.40 --> Drop[Discard]
+
+    Keep --> Enough{Relevant context?}
+    BatchGrade --> Enough
+    Enough -- Yes --> Generate[generate<br/>answer + citations + confidence]
+    Enough -- No, rewrite allowed --> Transform[transform_query<br/>question kept, search query rewritten]
+    Transform --> WebSearch[Web search<br/>Tavily, or DuckDuckGo<br/>each result cited by URL]
     WebSearch --> Generate
-    
-    Generate --> Reflect{check_hallucination<br/>& grounding}
-    Reflect -- Verified --> CacheStore[Store in Semantic Cache] --> End([Deliver Verified Answer])
-    Reflect -- Not Grounded --> CheckRetries{retry_count >= MAX_RETRIES?}
-    CheckRetries -- Retry Allowed --> TransformQuery
-    CheckRetries -- Hard Ceiling Reached --> GracefulFallback[Deterministic Fallback Node<br/>Verified Chunks + Disclaimer] --> End
+
+    Generate --> Reflect{reflect<br/>grounded? answers the question?}
+    Reflect -- Verified --> CacheStore[Store in cache] --> End([Verified answer])
+    Reflect -- Not verified, retry allowed --> Transform
+    Reflect -- Not verified, limits reached --> Fallback[Deterministic fallback<br/>best excerpts + disclaimer] --> End
 ```
 
 ---
 
-## 📊 RAGAS Benchmark Comparison (50-Question Evaluation)
+## 📊 Evaluation
 
-Automated evaluation generated via [`evals/ragas_eval.py`](./evals/ragas_eval.py) across 50 domain queries:
+Halo ships with a real evaluation harness ([`evals/run_eval.py`](./evals/run_eval.py)) that runs **both** a naive RAG baseline (dense top-k + one generation) and the full Halo graph on the same questions over your indexed corpus, then scores them with [RAGAS](https://docs.ragas.io) (faithfulness, response relevancy, context precision, context recall). It also reports the fallback rate, the web-search rate and average latency.
 
-| Metric | Naive RAG | Halo CRAG (Ours) | Relative Improvement |
-| :--- | :---: | :---: | :---: |
-| **Faithfulness** *(Inverse Hallucination)* | 0.4800 | **0.9200** | **+91.7%** |
-| **Answer Relevancy** | 0.7241 | **1.0000** | **+38.1%** |
-| **Context Precision** | 0.6520 | **0.9170** | **+40.6%** |
-| **Context Recall** | 0.1919 | **0.9500** | **+395.0%** |
+```bash
+pip install -e ".[eval]"
+python -m src.rag.ingest --dir ./data                       # index your documents
+cp evals/dataset.example.jsonl evals/dataset.jsonl          # write 30-50 Q&A pairs about them
+python -m evals.run_eval --dataset evals/dataset.jsonl      # results -> evals/results/*.json
+```
+
+> Benchmark results will be published here once they've been run on a real corpus.
 
 ---
 
 ## 🚀 Key Engineering Pillars
 
-1. **Hybrid Retrieval (Dense + Sparse BM25 with RRF)**:
-   - Combines dense semantic vector search with BM25Plus keyword indexing via Reciprocal Rank Fusion ($\text{Score} = \sum \frac{1}{60 + \text{rank}}$). Catches exact acronyms and section codes locally.
-2. **Fast Cross-Encoder Gatekeeper**:
-   - Scores candidate chunks using a local cross-encoder (`ms-marco-MiniLM-L-6-v2`). When confidence $\ge 0.85$, the LLM grading node is **bypassed completely**, cutting latency and token costs by over 70%.
-3. **Single-Call Batched Chunk Grading**:
-   - Borderline chunks are graded simultaneously in a single Pydantic structured output call (`BatchChunkGrading`) rather than $N$ expensive serial LLM calls.
-4. **Loop Circuit Breakers & Graceful Fallback**:
-   - `rewrite_count` and `generation_count` enforce hard ceilings (max 1–2 cycles). If verification still fails, execution routes to a deterministic fallback node returning top verified excerpts with a partial-confidence disclaimer.
-5. **Real-Time SSE Node Streaming**:
-   - Powered by FastAPI `StreamingResponse` and LangGraph `.astream_events(version="v2")` to stream real-time pipeline status (*"Retrieving internal knowledge..."*, *"Evaluating chunk relevance..."*, *"Synthesizing answer..."*).
-6. **Entry-Point Semantic Query Cache**:
-   - Evaluates cosine similarity ($> 0.92$) against previously verified queries, returning instant responses in under 50ms for identical or closely paraphrased questions.
+1. **Hybrid retrieval (dense + BM25 with RRF)**: dense vectors and BM25Plus keyword search are fused with Reciprocal Rank Fusion ($\text{score} = \sum \frac{1}{60 + \text{rank}}$) on stable chunk IDs, so exact acronyms and section codes are still found.
+2. **Per-chunk cross-encoder gatekeeper**: each chunk's sigmoid-normalised cross-encoder score decides whether it is kept, discarded, or sent to the LLM grader, so confident chunks never cost an LLM call.
+3. **Single-call batched grading**: borderline chunks are graded together in one structured-output call (`BatchChunkGrading`) instead of one call per chunk.
+4. **Verification on every answer, with hard ceilings**: grounding and answer checks run after every generation and fail closed if a grader errors. `MAX_REWRITES` / `MAX_REGENERATIONS` cap the retries, after which a deterministic fallback returns the best cited excerpts.
+5. **Real-time SSE streaming**: node-level status events stream as the graph runs, and only the final, verified answer is streamed as the message.
+6. **Semantic query cache**: verified, high-confidence answers are reused for near-identical questions. The cache is cleared automatically whenever documents are ingested, so stale answers are never served.
 
 ---
 
@@ -86,8 +79,10 @@ Automated evaluation generated via [`evals/ragas_eval.py`](./evals/ragas_eval.py
 ```bash
 git clone https://github.com/Nitro-Builds-Yash/halo
 cd halo
-pip install -r requirements.txt
-cp .env.example .env
+pip install -r requirements.txt      # full install incl. Streamlit + cross-encoder (torch)
+# or: pip install -e ".[ui]"         # lighter, without the reranker
+cp .env.example .env                 # add OPENAI_API_KEY (and optionally TAVILY_API_KEY, API_KEY)
+python -m src.rag.ingest --dir ./data   # index .pdf / .txt / .md files
 ```
 
 ### 2. Run the Streamlit Dashboard
@@ -107,11 +102,12 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 ### 5. Execute Evaluation & Test Suite
 ```bash
-# Run unit tests
-pytest tests/
+# Unit tests (no API keys needed - all LLM and search calls are mocked)
+pip install -e ".[dev]"
+pytest
 
-# Run automated RAGAS benchmark
-python evals/ragas_eval.py
+# Real RAGAS evaluation (see "Evaluation" above)
+python -m evals.run_eval --dataset evals/dataset.jsonl
 ```
 
 ---
@@ -120,10 +116,12 @@ python evals/ragas_eval.py
 
 | Method | Endpoint | Description |
 | --- | --- | --- |
-| `GET` | `/health` | Service health and active system capabilities |
-| `POST` | `/api/v1/query` | Complete synchronous CRAG execution with semantic cache check |
-| `POST` | `/api/v1/chat/stream` | Real-time Server-Sent Events (SSE) transition streaming |
-| `POST` | `/api/v1/documents/upload` | Multipart file upload with simultaneous ChromaDB & BM25 indexing |
+| `GET` | `/health` | Service health and capabilities |
+| `POST` | `/api/v1/query` | Full CRAG run (semantic cache first) |
+| `POST` | `/api/v1/chat/stream` | Server-Sent Events: status per node, then the final verified answer |
+| `POST` | `/api/v1/documents/upload` | Upload `.pdf` / `.txt` / `.md` (size-limited); re-uploading a filename replaces its old chunks |
+
+If `API_KEY` is set in `.env`, all `/api/v1/*` routes require an `X-API-Key` header. Allowed browser origins are set with `CORS_ORIGINS`. Every threshold and limit is configurable in `.env` (see [`.env.example`](./.env.example)).
 
 ---
 

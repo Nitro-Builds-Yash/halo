@@ -1,34 +1,38 @@
 from src.agents.state import AgentState
-from src.tools.search import get_web_search_tool
+from src.core.log import get_logger
+from src.tools import search as search_tool
+
+logger = get_logger(__name__)
+
 
 def web_search(state: AgentState) -> dict:
+    """Add web results as separate, cited documents.
+
+    - each result keeps its URL as `source`, so citations are meaningful
+    - results from an earlier web search are replaced, not piled up, on retries
+    - a failed search adds nothing (an error message is never fed to the generator as context)
     """
-    Web search based on the re-phrased question.
-    """
-    print("---WEB SEARCH---")
-    question = state["question"]
-    documents = list(state.get("documents", []))
-    
+    query = state.get("search_query") or state["question"]
+
+    docs, metas, scores = [], [], []
+    for d, m, s in zip(state.get("documents", []),
+                       state.get("doc_metadata", []),
+                       state.get("doc_scores") or [None] * len(state.get("documents", []))):
+        if m.get("type") != "web":
+            docs.append(d)
+            metas.append(m)
+            scores.append(s)
+
     try:
-        tool = get_web_search_tool()
-        
-        if hasattr(tool, "invoke"):
-            docs = tool.invoke({"query": question})
-        else:
-            docs = tool.run(question)
-            
-        # Standardize result format
-        if isinstance(docs, list):
-            web_results = "\n".join([d["content"] if isinstance(d, dict) and "content" in d else str(d) for d in docs])
-        elif isinstance(docs, str):
-            web_results = docs
-        else:
-            web_results = str(docs)
-            
-        if web_results.strip():
-            documents.append(web_results)
-    except Exception as e:
-        print(f"Web search warning: {e}")
-        documents.append(f"Web search could not retrieve additional facts: {e}")
-    
-    return {"documents": documents}
+        results = search_tool.search_web(query)
+    except Exception:
+        logger.exception("web_search: provider failed")
+        results = []
+
+    for r in results:
+        docs.append(r["content"])
+        metas.append({"source": r["url"], "title": r.get("title", ""), "type": "web", "page": None})
+        scores.append(None)
+
+    logger.info("web_search: %d result(s) for %r", len(results), query)
+    return {"documents": docs, "doc_metadata": metas, "doc_scores": scores}
