@@ -1,11 +1,17 @@
 __pycache__/
 *.py[cod]
+*.egg-info/
 .venv/
 venv/
 env/
 .env
 storage/
+chroma_db/
+data/
+evals/results/
+evals/dataset.jsonl
 .pytest_cache/
+.ruff_cache/
 *.log
 .vscode/
 .idea/

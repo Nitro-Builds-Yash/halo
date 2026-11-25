@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" role="img" aria-label="Halo pipeline: question, semantic cache, query plan, hybrid retrieval, relevance gate, generate, verify, verified answer; with a rewrite and web search correction loop and a fallback">
+  <style>
+    :root {
+      --panel: #f6f8fa; --panel-2: #ffffff; --ink: #0d1117; --muted: #57606a;
+      --line: #d0d7de; --accent: #0969da; --accent-soft: #ddf4ff; --good: #1a7f37;
+      --good-soft: #dafbe1; --warn: #9a6700; --warn-soft: #fff8c5;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --panel: #0d1117; --panel-2: #161b22; --ink: #f0f6fc; --muted: #8b949e;
+        --line: #30363d; --accent: #58a6ff; --accent-soft: #0c2d4a; --good: #3fb950;
+        --good-soft: #0f2d1a; --warn: #d29922; --warn-soft: #2b2111;
+      }
+    }
+    .sans { font-family: Geist, "Avenir Next", "Segoe UI", system-ui, sans-serif; }
+    .mono { font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace; }
+    .box { fill: var(--panel-2); stroke: var(--line); stroke-width: 1.5; }
+    .title { font-size: 14px; font-weight: 700; fill: var(--ink); }
+    .sub { font-size: 12px; fill: var(--muted); }
+    .step { font-size: 11px; fill: var(--accent); letter-spacing: 1px; }
+    .flow { fill: none; stroke: var(--accent); stroke-width: 2; }
+    .loop { fill: none; stroke: var(--warn); stroke-width: 2; stroke-dasharray: 6 6; }
+    .label { font-size: 12px; }
+    .moving { stroke-dasharray: 8 8; animation: run 1.6s linear infinite; }
+    @keyframes run { to { stroke-dashoffset: -32; } }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--accent)"/>
+    </marker>
+    <marker id="w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--warn)"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="560" rx="24" fill="var(--panel)" stroke="var(--line)"/>
+  <text x="40" y="48" class="mono step">FIG. 01</text>
+  <text x="112" y="48" class="mono" font-size="13" fill="var(--muted)">HOW A QUESTION BECOMES A VERIFIED ANSWER</text>
+
+  <!-- cache-hit shortcut -->
+  <path d="M 240 150 V 104 H 1104 V 146" class="flow" stroke-opacity="0.55" marker-end="url(#a)"/>
+  <rect x="604" y="92" width="152" height="24" rx="12" fill="var(--accent-soft)"/>
+  <text x="680" y="108" class="mono label" fill="var(--accent)" text-anchor="middle">cache hit · ≥ 0.92</text>
+
+  <!-- main path arrows -->
+  <g class="flow moving">
+    <path d="M 160 200 H 172"/><path d="M 304 200 H 316"/><path d="M 448 200 H 460"/>
+    <path d="M 592 200 H 604"/><path d="M 736 200 H 748"/><path d="M 880 200 H 892"/><path d="M 1024 200 H 1036"/>
+  </g>
+  <g class="flow">
+    <path d="M 160 200 H 174" marker-end="url(#a)"/><path d="M 304 200 H 318" marker-end="url(#a)"/>
+    <path d="M 448 200 H 462" marker-end="url(#a)"/><path d="M 592 200 H 606" marker-end="url(#a)"/>
+    <path d="M 736 200 H 750" marker-end="url(#a)"/><path d="M 880 200 H 894" marker-end="url(#a)"/>
+    <path d="M 1024 200 H 1038" marker-end="url(#a)"/>
+  </g>
+
+  <!-- main path boxes: x = 32 + 144 i, width 128 -->
+  <g class="sans">
+    <rect x="32" y="150" width="128" height="100" rx="14" class="box"/>
+    <text x="96" y="174" class="mono step" text-anchor="middle">IN</text>
+    <text x="96" y="198" class="title" text-anchor="middle">Question</text>
+    <text x="96" y="220" class="sub" text-anchor="middle">API, UI or CLI</text>
+
+    <rect x="176" y="150" width="128" height="100" rx="14" class="box"/>
+    <text x="240" y="174" class="mono step" text-anchor="middle">01</text>
+    <text x="240" y="198" class="title" text-anchor="middle">Semantic cache</text>
+    <text x="240" y="220" class="sub" text-anchor="middle">asked before?</text>
+
+    <rect x="320" y="150" width="128" height="100" rx="14" class="box"/>
+    <text x="384" y="174" class="mono step" text-anchor="middle">02</text>
+    <text x="384" y="198" class="title" text-anchor="middle">Query plan</text>
+    <text x="384" y="220" class="sub" text-anchor="middle">split multi-part</text>
+    <text x="384" y="236" class="sub" text-anchor="middle">questions</text>
+
+    <rect x="464" y="150" width="128" height="100" rx="14" class="box"/>
+    <text x="528" y="174" class="mono step" text-anchor="middle">03</text>
+    <text x="528" y="198" class="title" text-anchor="middle">Hybrid search</text>
+    <text x="528" y="220" class="sub" text-anchor="middle">Chroma + BM25</text>
+    <text x="528" y="236" class="sub" text-anchor="middle">RRF → rerank</text>
+
+    <rect x="608" y="150" width="128" height="100" rx="14" class="box"/>
+    <text x="672" y="174" class="mono step" text-anchor="middle">04</text>
+    <text x="672" y="198" class="title" text-anchor="middle">Relevance gate</text>
+    <text x="672" y="220" class="sub" text-anchor="middle">≥ 0.85 keep</text>
+    <text x="672" y="236" class="sub" text-anchor="middle">&lt; 0.40 drop</text>
+
+    <rect x="752" y="150" width="128" height="100" rx="14" class="box"/>
+    <text x="816" y="174" class="mono step" text-anchor="middle">05</text>
+    <text x="816" y="198" class="title" text-anchor="middle">Generate</text>
+    <text x="816" y="220" class="sub" text-anchor="middle">answer, citations,</text>
+    <text x="816" y="236" class="sub" text-anchor="middle">confidence</text>
+
+    <rect x="896" y="150" width="128" height="100" rx="14" class="box" style="stroke: var(--accent)"/>
+    <text x="960" y="174" class="mono step" text-anchor="middle">06</text>
+    <text x="960" y="198" class="title" text-anchor="middle">Verify</text>
+    <text x="960" y="220" class="sub" text-anchor="middle">grounded?</text>
+    <text x="960" y="236" class="sub" text-anchor="middle">answers it?</text>
+
+    <rect x="1040" y="150" width="128" height="100" rx="14" fill="var(--good-soft)" stroke="var(--good)" stroke-width="1.5"/>
+    <text x="1104" y="174" class="mono step" text-anchor="middle" style="fill: var(--good)">OUT</text>
+    <text x="1104" y="198" class="title" text-anchor="middle">✓ Answer</text>
+    <text x="1104" y="220" class="sub" text-anchor="middle">verified, with</text>
+    <text x="1104" y="236" class="sub" text-anchor="middle">sources</text>
+  </g>
+
+  <!-- correction loop -->
+  <path d="M 672 250 V 336" class="loop" marker-end="url(#w)"/>
+  <text x="662" y="292" class="mono label" fill="var(--warn)" text-anchor="end">no relevant context</text>
+
+  <path d="M 736 380 H 750" class="loop" marker-end="url(#w)"/>
+  <path d="M 816 336 V 254" class="loop" marker-end="url(#w)"/>
+  <text x="826" y="300" class="mono label" fill="var(--warn)">+ web context</text>
+
+  <path d="M 960 250 V 470 H 672 V 428" class="loop" marker-end="url(#w)"/>
+  <text x="972" y="452" class="mono label" fill="var(--warn)">not verified → retry once</text>
+
+  <path d="M 1000 250 V 294 H 1104 V 336" class="loop" style="stroke: var(--muted)" marker-end="url(#a)"/>
+  <text x="1030" y="286" class="mono label" fill="var(--muted)">limits reached</text>
+
+  <g class="sans">
+    <rect x="608" y="340" width="128" height="86" rx="14" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.5"/>
+    <text x="672" y="372" class="title" text-anchor="middle">Rewrite query</text>
+    <text x="672" y="394" class="sub" text-anchor="middle">question kept,</text>
+    <text x="672" y="410" class="sub" text-anchor="middle">search query new</text>
+
+    <rect x="752" y="340" width="128" height="86" rx="14" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.5"/>
+    <text x="816" y="372" class="title" text-anchor="middle">Web search</text>
+    <text x="816" y="394" class="sub" text-anchor="middle">Tavily or</text>
+    <text x="816" y="410" class="sub" text-anchor="middle">DuckDuckGo</text>
+
+    <rect x="1040" y="340" width="128" height="86" rx="14" class="box" stroke-dasharray="5 5"/>
+    <text x="1104" y="372" class="title" text-anchor="middle">Fallback</text>
+    <text x="1104" y="394" class="sub" text-anchor="middle">best excerpts</text>
+    <text x="1104" y="410" class="sub" text-anchor="middle">+ disclaimer</text>
+  </g>
+
+  <!-- legend -->
+  <g class="mono" font-size="12">
+    <line x1="40" y1="515" x2="76" y2="515" class="flow"/>
+    <text x="86" y="519" fill="var(--muted)">main path</text>
+    <line x1="190" y1="515" x2="226" y2="515" class="loop"/>
+    <text x="236" y="519" fill="var(--muted)">correction loop (max one rewrite + one retry)</text>
+  </g>
+</svg>

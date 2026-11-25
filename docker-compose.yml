@@ -1,0 +1,46 @@
+# docker compose up --build   ->  API on :8000, Streamlit UI on :8501
+# API and UI share one Chroma server plus a volume for the BM25 index and answer cache,
+# so documents uploaded through either are visible to both.
+services:
+  chroma:
+    image: chromadb/chroma:latest
+    volumes:
+      - chroma-data:/data
+    restart: unless-stopped
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      CHROMA_HOST: chroma
+      CHROMA_PORT: 8000
+      CHROMA_PERSIST_DIR: /data/halo
+    ports:
+      - "8000:8000"
+    volumes:
+      - halo-data:/data
+    depends_on:
+      - chroma
+    restart: unless-stopped
+
+  ui:
+    build: .
+    env_file: .env
+    environment:
+      CHROMA_HOST: chroma
+      CHROMA_PORT: 8000
+      CHROMA_PERSIST_DIR: /data/halo
+    command: ["streamlit", "run", "src/halo/ui/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+    ports:
+      - "8501:8501"
+    volumes:
+      - halo-data:/data
+    depends_on:
+      - chroma
+    restart: unless-stopped
+
+volumes:
+  chroma-data:
+  halo-data:
