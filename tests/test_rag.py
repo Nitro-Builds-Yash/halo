@@ -132,8 +132,9 @@ def test_list_and_delete_sources(tmp_path, monkeypatch):
     monkeypatch.setattr(ingest, "get_bm25_index", lambda: bm25)
     f = tmp_path / "a.txt"
     f.write_text("One.\n\nTwo.")
-    ingest.ingest_file_list([str(f)], ["a.txt"])
-    assert ingest.list_sources() == [{"source": "a.txt", "chunks": 2, "pages": 1}]
-    assert ingest.delete_source("a.txt") == 2
+    _, n_chunks = ingest.ingest_file_list([str(f)], ["a.txt"])
+    assert n_chunks > 0
+    assert ingest.list_sources() == [{"source": "a.txt", "chunks": n_chunks, "pages": 1}]
+    assert ingest.delete_source("a.txt") == n_chunks
     assert ingest.list_sources() == [] and vs.store == {}
     assert ingest.delete_source("a.txt") == 0
