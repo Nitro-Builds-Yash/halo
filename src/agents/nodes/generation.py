@@ -4,6 +4,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from src.agents.schemas import AnswerWithCitations
 from src.agents.state import AgentState
+from src.core.config import settings
 from src.core.llm import get_llm
 from src.core.log import get_logger
 
@@ -23,14 +24,39 @@ _SYSTEM = """You are a rigorous QA assistant.
    - 0.00 - 0.49: insufficient or speculative"""
 
 
-def format_context(documents: List[str], metas: List[Dict[str, Any]]) -> str:
-    blocks = []
+def format_context(documents: List[str], metas: List[Dict[str, Any]],
+                   max_doc_chars: int | None = None, max_total_chars: int | None = None) -> str:
+    """Render documents with source headers, truncating long documents and stopping at a
+    total budget so prompts stay inside the model's context window. Documents arrive in
+    relevance order, so the least relevant ones are dropped first."""
+    max_doc = max_doc_chars or settings.MAX_DOC_CHARS
+    budget = max_total_chars or settings.MAX_CONTEXT_CHARS
+    blocks, used = [], 0
     for idx, doc in enumerate(documents):
         meta = metas[idx] if idx < len(metas) else {}
         page = meta.get("page")
         header = f"[Source: {meta.get('source', 'Unknown Source')} | Page: {page if page is not None else 'N/A'}]"
-        blocks.append(f"{header}\n{doc}")
+        body = doc if len(doc) <= max_doc else doc[:max_doc] + " [...]"
+        block = f"{header}\n{body}"
+        if blocks and used + len(block) > budget:
+            break
+        blocks.append(block)
+        used += len(block)
     return "\n\n---\n\n".join(blocks)
+
+
+def filter_citations(citations: List[Dict[str, Any]], metas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Drop citations whose source wasn't in the context (models sometimes invent sources)
+    and exact duplicates."""
+    known = {str(m.get("source", "")).strip().lower() for m in metas if m.get("source")}
+    seen, kept = set(), []
+    for c in citations:
+        source = str(c.get("source", "")).strip().lower()
+        key = (source, c.get("page"), c.get("snippet"))
+        if source in known and key not in seen:
+            seen.add(key)
+            kept.append(c)
+    return kept
 
 
 def generate_answer(question: str, context: str) -> AnswerWithCitations:
@@ -58,7 +84,7 @@ def generate(state: AgentState) -> dict:
         return {
             "generation": res.answer,
             "confidence": float(res.confidence),
-            "citations": [c.model_dump() for c in res.citations],
+            "citations": filter_citations([c.model_dump() for c in res.citations], metas),
         }
     except Exception:
         logger.exception("generate: structured output failed; falling back to plain text")

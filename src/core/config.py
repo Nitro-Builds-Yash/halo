@@ -12,13 +12,22 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "gpt-4o-mini"
     LLM_TEMPERATURE: float = 0.0
     EMBEDDING_MODEL: str = "text-embedding-3-small"
+    # Point at any OpenAI-compatible server (e.g. Ollama: http://localhost:11434/v1) to run without OpenAI.
+    LLM_BASE_URL: str = ""
+    EMBEDDING_BASE_URL: str = ""
+    LLM_TIMEOUT_SECONDS: float = 60.0
+    LLM_MAX_RETRIES: int = 2
 
     # RAG Settings
-    CHROMA_PERSIST_DIR: str = "./chroma_db"
+    CHROMA_PERSIST_DIR: str = "./chroma_db"   # local mode (single process); also holds BM25 + cache files
+    CHROMA_HOST: str = ""                       # set to use a Chroma server (needed when API and UI run separately)
+    CHROMA_PORT: int = 8000
     COLLECTION_NAME: str = "halo_documents"
     TOP_K_RETRIEVE: int = 4
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 200
+    MAX_CONTEXT_CHARS: int = 24000   # total context sent to the generator / graders
+    MAX_DOC_CHARS: int = 4000        # per document (long web pages are truncated)
 
     # Self-correction ceilings
     MAX_REWRITES: int = 1          # query rewrites + web searches per question
@@ -43,6 +52,11 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @property
+    def llm_configured(self) -> bool:
+        """True if an LLM/embedding backend is reachable without further setup."""
+        return bool(self.OPENAI_API_KEY or self.LLM_BASE_URL)
 
     @property
     def cors_origins_list(self) -> List[str]:

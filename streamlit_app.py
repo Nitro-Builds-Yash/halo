@@ -1,3 +1,4 @@
+import html
 import os
 import shutil
 import sys
@@ -9,11 +10,11 @@ import streamlit as st
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from src.agents.graph import graph
-from src.agents.runner import cache_payload, cached_answer, should_cache, summarize, used_web_search
+from src.agents.runner import cache_payload, cached_answer, should_cache, summarize
 from src.agents.state import initial_state
 from src.core.config import settings
 from src.core.semantic_cache import SemanticCache
-from src.rag.ingest import ingest_file_list
+from src.rag.ingest import delete_source, ingest_file_list, list_sources
 
 st.set_page_config(
     page_title="Halo — Production Agentic CRAG",
@@ -92,90 +93,177 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Sidebar: Document Management & Settings
-with st.sidebar:
-    st.markdown("### 📂 Document Store (Hybrid Index)")
-    st.caption("Upload files to synchronize Dense ChromaDB + BM25 Lexical Store.")
-    
-    uploaded_files = st.file_uploader(
-        "Upload files (PDF, TXT, MD)",
-        type=["pdf", "txt", "md"],
-        accept_multiple_files=True
-    )
+# ---------------------------------------------------------------- helpers
 
-    if st.button("🚀 Ingest & Index", type="primary", use_container_width=True):
+STEP_LABELS = {
+    "retrieve": "🔍 <b>Hybrid retrieval</b>: Chroma dense + BM25, fused with RRF, cross-encoder rerank",
+    "grade_documents": "⚖️ <b>Relevance gate</b>: per-chunk cross-encoder scores + batched LLM grading",
+    "transform_query": "🔄 <b>Query rewrite</b>: local context insufficient, preparing a web search",
+    "web_search": "🌐 <b>Web search</b>: Tavily / DuckDuckGo",
+    "generate": "✍️ <b>Answer synthesis</b>: answer with citations and confidence",
+    "increment_retry": "⚠️ <b>Not verified</b>: retrying with web context",
+    "graceful_fallback": "🛟 <b>Fallback</b>: returning best excerpts with a disclaimer",
+}
+
+
+def esc(value) -> str:
+    """Escape text from documents, web pages or the LLM before putting it in HTML."""
+    return html.escape("" if value is None else str(value))
+
+
+def step(text_html: str, color: str | None = None):
+    style = f' style="border-left-color: {color};"' if color else ""
+    st.markdown(f'<div class="step-log"{style}>{text_html}</div>', unsafe_allow_html=True)
+
+
+def render_confidence(confidence):
+    if confidence is None:
+        return
+    conf = max(0.0, min(1.0, float(confidence)))
+    col_bar, col_val = st.columns([4, 1])
+    col_bar.progress(conf)
+    col_val.caption(f"**Confidence:** {int(conf * 100)}%")
+
+
+def render_citations(citations, expanded=False):
+    if not citations:
+        return
+    with st.expander("📚 Source citations", expanded=expanded):
+        for c in citations:
+            page = c.get("page")
+            st.markdown(
+                f'<div class="citation-card">'
+                f'<div class="citation-header">📄 {esc(c.get("source", "Unknown"))}'
+                f'{f" (page {esc(page)})" if page is not None else ""}</div>'
+                f'<div class="citation-snippet">"{esc(c.get("snippet", ""))}"</div>'
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+
+def render_trace(meta):
+    with st.expander("🔍 Quality & agent trace", expanded=False):
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Chunks used", meta.get("retained_chunks", 0))
+        col2.metric("Web search", "Yes" if meta.get("web_search_used") else "No")
+        col3.metric("Retries", meta.get("retries", 0))
+        col4.metric("Verified", "Cached" if meta.get("cached") else ("No" if meta.get("fallback") else "Yes"))
+
+
+def render_answer(msg, expanded_citations=False):
+    if msg.get("fallback"):
+        st.warning("Partial answer: this could not be fully verified against the sources.")
+    st.markdown(msg["content"])
+    render_confidence(msg.get("confidence"))
+    render_citations(msg.get("citations"), expanded=expanded_citations)
+    if "meta" in msg:
+        render_trace(msg["meta"])
+
+
+def run_pipeline(question: str) -> dict:
+    """Run the graph with live step updates; returns the summarized result."""
+    cache = SemanticCache.get_instance()
+    hit = cached_answer(question, cache)
+    if hit:
+        step(f"⚡ <b>Semantic cache hit</b>: similarity {esc(hit['cached_similarity'])}")
+        return hit
+
+    final_state = initial_state(question)
+    for output in graph.stream(final_state):
+        for node, update in output.items():
+            update = update or {}
+            if node == "decompose_query":
+                subs = update.get("sub_questions", [])
+                step(f"🧩 <b>Query plan</b>: {len(subs)} sub-question(s): <i>{esc('; '.join(subs))}</i>")
+            elif node == "reflect":
+                step(f"🧪 <b>Verification</b>: {esc(update.get('verdict', ''))}",
+                     None if update.get("verdict") == "useful" else "#f59e0b")
+            elif node in STEP_LABELS:
+                step(STEP_LABELS[node], "#ef4444" if node == "increment_retry" else None)
+            final_state.update(update)
+
+    result = summarize(question, final_state)
+    if should_cache(result):
+        cache.store(question, cache_payload(final_state))
+    return result
+
+
+def ingest_uploads(files):
+    temp_dir = tempfile.mkdtemp(prefix="halo_st_")
+    try:
+        paths, names = [], []
+        for i, f in enumerate(files):
+            name = os.path.basename(f.name.replace("\\", "/"))
+            path = os.path.join(temp_dir, f"{i}_{name}")
+            with open(path, "wb") as out:
+                out.write(f.getbuffer())
+            paths.append(path)
+            names.append(name)
+        n_docs, n_chunks = ingest_file_list(paths, names)
+        SemanticCache.get_instance().clear()
+        return n_docs, n_chunks
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------- sidebar
+
+with st.sidebar:
+    st.markdown("### 📂 Documents")
+    uploaded_files = st.file_uploader("Upload files (PDF, TXT, MD)", type=["pdf", "txt", "md"],
+                                      accept_multiple_files=True)
+    if st.button("🚀 Ingest & index", type="primary", use_container_width=True):
         if not uploaded_files:
             st.warning("Please select at least one document first.")
         else:
-            with st.spinner("Building Dense Vectors + BM25 inverted index..."):
-                temp_paths, source_names = [], []
-                temp_dir = tempfile.mkdtemp(prefix="halo_st_")
+            with st.spinner("Embedding and indexing (Chroma + BM25)..."):
                 try:
-                    for i, f in enumerate(uploaded_files):
-                        name = os.path.basename(f.name.replace("\\", "/"))
-                        path = os.path.join(temp_dir, f"{i}_{name}")
-                        with open(path, "wb") as out:
-                            out.write(f.getbuffer())
-                        temp_paths.append(path)
-                        source_names.append(name)
-
-                    num_docs, num_chunks = ingest_file_list(temp_paths, source_names)
-                    SemanticCache.get_instance().clear()
-                    st.success(f"✅ Ingested {num_docs} page(s) into {num_chunks} hybrid chunks!")
+                    n_docs, n_chunks = ingest_uploads(uploaded_files)
+                    st.success(f"✅ Ingested {n_docs} page(s) into {n_chunks} chunks.")
                 except Exception as e:
                     st.error(f"❌ Ingestion error: {e}")
-                finally:
-                    shutil.rmtree(temp_dir, ignore_errors=True)
+
+    sources = list_sources()
+    if sources:
+        st.caption(f"{len(sources)} document(s) indexed")
+        for doc in sources:
+            col_name, col_del = st.columns([5, 1])
+            col_name.markdown(f"📄 {esc(doc['source'])}")
+            col_name.caption(f"{doc['chunks']} chunks")
+            if col_del.button("🗑️", key=f"del_{doc['source']}", help=f"Remove {doc['source']} from the index"):
+                delete_source(doc["source"])
+                SemanticCache.get_instance().clear()
+                st.rerun()
+    else:
+        st.caption("No documents indexed yet.")
 
     st.markdown("---")
-    st.markdown("### ⚙️ Pipeline Specifications")
+    st.markdown("### ⚙️ Pipeline")
     st.info(f"**Model:** `{settings.LLM_MODEL}`\n\n"
-            f"**Retrieval:** `Hybrid RRF (BM25 + Chroma)`\n\n"
-            f"**Reranker:** `ms-marco-MiniLM-L-6-v2`\n\n"
-            f"**Top-K Chunks:** `{settings.TOP_K_RETRIEVE}`\n\n"
-            f"**Max Retries / Web Rewrites:** `{settings.MAX_REGENERATIONS}` / `{settings.MAX_REWRITES}`")
-    
-    if st.button("🧹 Clear Chat History", use_container_width=True):
+            f"**Embeddings:** `{settings.EMBEDDING_MODEL}`\n\n"
+            f"**Retrieval:** `Hybrid RRF (BM25 + Chroma)` + cross-encoder\n\n"
+            f"**Top-K chunks:** `{settings.TOP_K_RETRIEVE}`\n\n"
+            f"**Max retries / web rewrites:** `{settings.MAX_REGENERATIONS}` / `{settings.MAX_REWRITES}`")
+    if not settings.llm_configured:
+        st.error("Set OPENAI_API_KEY (or LLM_BASE_URL for a local model) in .env")
+
+    if st.button("🧹 Clear chat", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
 
-# Main Chat Interface
+# ---------------------------------------------------------------- chat
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display conversation history
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-        
-        # Display confidence bar if present
-        if "confidence" in msg and msg["confidence"] is not None:
-            conf = float(msg["confidence"])
-            col_bar, col_val = st.columns([4, 1])
-            with col_bar:
-                st.progress(conf)
-            with col_val:
-                st.caption(f"**Confidence:** {int(conf * 100)}%")
-                
-        # Display citations if present
-        if msg.get("citations"):
-            with st.expander("📚 Grounded Source Citations", expanded=False):
-                for cit in msg["citations"]:
-                    st.markdown(f"""
-                    <div class="citation-card">
-                        <div class="citation-header">📄 {cit.get('source', 'Unknown')} (Page {cit.get('page', 'N/A')})</div>
-                        <div class="citation-snippet">"{cit.get('snippet', '')}"</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+        if msg["role"] == "assistant":
+            render_answer(msg)
+        else:
+            st.markdown(msg["content"])
 
-        if "meta" in msg:
-            with st.expander("🔍 Quality & Agent Trace", expanded=False):
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Retained Chunks", msg["meta"].get("retained_chunks", 0))
-                col2.metric("Fallback Search", "Yes" if msg["meta"].get("web_search_fallback") else "No")
-                col3.metric("Reflection Retries", msg["meta"].get("reflection_retries", 0))
-
-user_query = st.chat_input("Ask a deep question over policies, research papers, or manuals...")
+user_query = st.chat_input("Ask a question about your policies, papers or manuals...")
 
 if user_query:
     st.session_state.messages.append({"role": "user", "content": user_query})
@@ -183,86 +271,29 @@ if user_query:
         st.markdown(user_query)
 
     with st.chat_message("assistant"):
-        status_box = st.status("⚡ Executing Agentic CRAG Pipeline...", expanded=True)
-        cache = SemanticCache.get_instance()
-        hit = cached_answer(user_query, cache)
+        status_box = st.status("⚡ Running the CRAG pipeline...", expanded=True)
+        try:
+            with status_box:
+                result = run_pipeline(user_query)
+            status_box.update(label="✅ Done", state="complete", expanded=False)
+        except Exception as e:
+            status_box.update(label="❌ Pipeline error", state="error", expanded=True)
+            st.error(f"The question could not be processed: {e}")
+            st.stop()
 
-        final_state = {}
-        with status_box:
-            if hit:
-                st.markdown(f'<div class="step-log">⚡ <b>Semantic cache hit</b> — similarity {hit["cached_similarity"]}</div>', unsafe_allow_html=True)
-                final_state = {**hit, "doc_metadata": []}
-            for output in ([] if hit else graph.stream(initial_state(user_query))):
-                for node_name, state_update in output.items():
-                    if node_name == "decompose_query":
-                        sub_qs = state_update.get("sub_questions", [])
-                        st.markdown(f'<div class="step-log">🧩 <b>Step 1: Query Decomposition</b> — Decomposed into {len(sub_qs)} sub-query/queries: <i>{", ".join(sub_qs)}</i></div>', unsafe_allow_html=True)
-                    elif node_name == "retrieve":
-                        st.markdown('<div class="step-log">🔍 <b>Step 2: Hybrid Retrieval</b> — Fusing ChromaDB Dense Vectors + BM25 Lexical + CrossEncoder Rerank</div>', unsafe_allow_html=True)
-                    elif node_name == "grade_documents":
-                        st.markdown('<div class="step-log">⚖️ <b>Step 3: Relevance Grader</b> — Auditing chunks with structured schema</div>', unsafe_allow_html=True)
-                    elif node_name == "transform_query":
-                        st.markdown('<div class="step-log">🔄 <b>Step 4: Query Transform</b> — Reformulating query for search engine indexing</div>', unsafe_allow_html=True)
-                    elif node_name == "web_search":
-                        st.markdown('<div class="step-log">🌐 <b>Step 5: Web Search</b> — Querying Tavily/DuckDuckGo fallback tool</div>', unsafe_allow_html=True)
-                    elif node_name == "generate":
-                        st.markdown('<div class="step-log">✍️ <b>Step 6: Answer Synthesis</b> — Generating verified answer with confidence & citations</div>', unsafe_allow_html=True)
-                    elif node_name == "reflect":
-                        verdict = (state_update or {}).get("verdict", "")
-                        st.markdown(f'<div class="step-log">🧪 <b>Verification</b> — grounding & answer check: <i>{verdict}</i></div>', unsafe_allow_html=True)
-                    elif node_name == "graceful_fallback":
-                        st.markdown('<div class="step-log" style="border-left-color: #f59e0b;">🛟 <b>Fallback</b> — returning best excerpts with a disclaimer</div>', unsafe_allow_html=True)
-                    elif node_name == "increment_retry":
-                        st.markdown('<div class="step-log" style="border-left-color: #ef4444;">⚠️ <b>Quality Gate Check:</b> Reflection triggered retry loop...</div>', unsafe_allow_html=True)
-                    final_state.update(state_update or {})
-
-        status_box.update(label="✅ Halo Pipeline Finished", state="complete", expanded=False)
-        
-        answer = final_state.get("generation", "No generation produced.")
-        confidence = final_state.get("confidence", 0.0)
-        if not hit:
-            result = summarize(user_query, final_state)
-            if should_cache(result):
-                cache.store(user_query, cache_payload(final_state))
-        citations = final_state.get("citations", [])
-
-        st.markdown(answer)
-
-        # Confidence Bar
-        if confidence is not None:
-            col_bar, col_val = st.columns([4, 1])
-            with col_bar:
-                st.progress(float(confidence))
-            with col_val:
-                st.caption(f"**Confidence:** {int(confidence * 100)}%")
-
-        # Display Citations
-        if citations:
-            with st.expander("📚 Grounded Source Citations", expanded=True):
-                for cit in citations:
-                    st.markdown(f"""
-                    <div class="citation-card">
-                        <div class="citation-header">📄 {cit.get('source', 'Unknown')} (Page {cit.get('page', 'N/A')})</div>
-                        <div class="citation-snippet">"{cit.get('snippet', '')}"</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-        meta = {
-            "retained_chunks": len(final_state.get("documents", [])),
-            "web_search_fallback": hit.get("web_search_used", False) if hit else used_web_search(final_state),
-            "reflection_retries": final_state.get("retry_count", 0),
-            "sub_questions": final_state.get("sub_questions", [])
-        }
-        with st.expander("🔍 Quality & Agent Trace", expanded=False):
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Retained Chunks", meta["retained_chunks"])
-            col2.metric("Fallback Search", "Yes" if meta["web_search_fallback"] else "No")
-            col3.metric("Reflection Retries", meta["reflection_retries"])
-
-        st.session_state.messages.append({
+        msg = {
             "role": "assistant",
-            "content": answer,
-            "confidence": confidence,
-            "citations": citations,
-            "meta": meta
-        })
+            "content": result["generation"] or "No answer produced.",
+            "confidence": result["confidence"],
+            "citations": result["citations"],
+            "fallback": result["is_fallback"],
+            "meta": {
+                "retained_chunks": len(result["documents"]),
+                "web_search_used": result["web_search_used"],
+                "retries": result["retry_count"],
+                "fallback": result["is_fallback"],
+                "cached": result["cached"],
+            },
+        }
+        render_answer(msg, expanded_citations=True)
+        st.session_state.messages.append(msg)

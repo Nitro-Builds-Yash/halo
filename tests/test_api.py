@@ -88,3 +88,16 @@ def test_query_hides_internal_errors(client, monkeypatch):
     r = client.post("/api/v1/query", json={"question": "refund?"})
     assert r.status_code == 500
     assert "sk-secret" not in r.text
+
+
+def test_list_and_delete_documents(client, monkeypatch):
+    cleared = []
+    monkeypatch.setattr(server, "list_sources", lambda: [{"source": "a.pdf", "chunks": 3, "pages": 2}])
+    monkeypatch.setattr(server, "delete_source", lambda s: 3 if s == "a.pdf" else 0)
+    monkeypatch.setattr(server.semantic_cache, "clear", lambda: cleared.append(True))
+
+    data = client.get("/api/v1/documents").json()
+    assert data["total_chunks"] == 3 and data["documents"][0]["source"] == "a.pdf"
+    assert client.delete("/api/v1/documents/a.pdf").json()["chunks_removed"] == 3
+    assert cleared
+    assert client.delete("/api/v1/documents/missing.pdf").status_code == 404

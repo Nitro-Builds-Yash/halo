@@ -31,11 +31,20 @@ def get_vectorstore():
         if _vectorstore is None:
             from langchain_chroma import Chroma
 
-            _vectorstore = Chroma(
-                collection_name=settings.COLLECTION_NAME,
-                embedding_function=get_embeddings(),
-                persist_directory=settings.CHROMA_PERSIST_DIR,
-            )
+            if settings.CHROMA_HOST:
+                import chromadb
+
+                _vectorstore = Chroma(
+                    collection_name=settings.COLLECTION_NAME,
+                    embedding_function=get_embeddings(),
+                    client=chromadb.HttpClient(host=settings.CHROMA_HOST, port=settings.CHROMA_PORT),
+                )
+            else:
+                _vectorstore = Chroma(
+                    collection_name=settings.COLLECTION_NAME,
+                    embedding_function=get_embeddings(),
+                    persist_directory=settings.CHROMA_PERSIST_DIR,
+                )
         return _vectorstore
 
 

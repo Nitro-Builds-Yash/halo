@@ -98,3 +98,42 @@ def test_reingest_replaces_instead_of_duplicating(tmp_path, monkeypatch):
     ingest.ingest_file_list([str(f)], ["policy.txt"])
     assert [t for t, _ in vs.store.values()] == ["Completely new text."]
     assert all(m["source"] == "policy.txt" for _, m in vs.store.values())
+
+
+def test_bm25_sources_summary(tmp_path):
+    index = BM25Index(persist_path=str(tmp_path / "bm25.json"))
+    index.add_documents(DOCS + ["More refund rules."], METAS + [{"source": "policy.pdf", "page": 3}], ids=["a", "b", "c"])
+    assert index.sources() == [
+        {"source": "policy.pdf", "chunks": 2, "pages": 2},
+        {"source": "shipping.pdf", "chunks": 1, "pages": 1},
+    ]
+
+
+def test_bm25_sees_changes_from_another_process(tmp_path):
+    import os
+    import time
+
+    path = str(tmp_path / "bm25.json")
+    reader = BM25Index(persist_path=path)       # e.g. the Streamlit process
+    writer = BM25Index(persist_path=path)       # e.g. the API process
+    writer.add_documents(DOCS, METAS, ids=["a", "b"])
+    assert reader.search("refund")[0]["id"] == "a"
+
+    writer.delete_source("policy.pdf")
+    os.utime(path, (time.time() + 5, time.time() + 5))  # make the mtime change unambiguous
+    assert reader.search("refund") == []
+    assert len(reader) == 1
+
+
+def test_list_and_delete_sources(tmp_path, monkeypatch):
+    vs = FakeVectorstore()
+    bm25 = BM25Index(persist_path=str(tmp_path / "bm25.json"))
+    monkeypatch.setattr(ingest, "get_vectorstore", lambda: vs)
+    monkeypatch.setattr(ingest, "get_bm25_index", lambda: bm25)
+    f = tmp_path / "a.txt"
+    f.write_text("One.\n\nTwo.")
+    ingest.ingest_file_list([str(f)], ["a.txt"])
+    assert ingest.list_sources() == [{"source": "a.txt", "chunks": 2, "pages": 1}]
+    assert ingest.delete_source("a.txt") == 2
+    assert ingest.list_sources() == [] and vs.store == {}
+    assert ingest.delete_source("a.txt") == 0

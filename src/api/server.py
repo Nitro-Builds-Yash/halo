@@ -13,11 +13,11 @@ from fastapi.responses import StreamingResponse
 from src.agents.graph import graph
 from src.agents.runner import cache_payload, cached_answer, should_cache, summarize
 from src.agents.state import initial_state
-from src.api.schemas import IngestResponse, QueryRequest, QueryResponse
+from src.api.schemas import DeleteResponse, DocumentList, IngestResponse, QueryRequest, QueryResponse
 from src.core.config import settings
 from src.core.log import get_logger
 from src.core.semantic_cache import SemanticCache
-from src.rag.ingest import SUPPORTED_EXTENSIONS, ingest_file_list
+from src.rag.ingest import SUPPORTED_EXTENSIONS, delete_source, ingest_file_list, list_sources
 
 logger = get_logger(__name__)
 
@@ -33,7 +33,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Content-Type", "X-API-Key"],
 )
 
@@ -87,6 +87,7 @@ def health():
             "answer_verification_every_generation",
             "deterministic_fallback",
             "sse_streaming",
+            "document_management",
         ],
     }
 
@@ -205,3 +206,18 @@ async def upload_documents(files: List[UploadFile] = File(...)):
         )
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@app.get("/api/v1/documents", response_model=DocumentList, dependencies=[Depends(require_api_key)])
+async def get_documents():
+    docs = await run_in_threadpool(list_sources)
+    return DocumentList(documents=docs, total_chunks=sum(d["chunks"] for d in docs))
+
+
+@app.delete("/api/v1/documents/{source}", response_model=DeleteResponse, dependencies=[Depends(require_api_key)])
+async def remove_document(source: str):
+    removed = await run_in_threadpool(delete_source, source)
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"No indexed document named {source!r}")
+    await run_in_threadpool(semantic_cache.clear)
+    return DeleteResponse(status="deleted", source=source, chunks_removed=removed)
