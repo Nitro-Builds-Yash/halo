@@ -101,8 +101,8 @@ def main():
     parser.add_argument("--out-dir", default="evals/results")
     args = parser.parse_args()
 
-    if not settings.OPENAI_API_KEY:
-        raise SystemExit("OPENAI_API_KEY is required (both pipelines and the RAGAS judge call OpenAI).")
+    if not settings.llm_configured:
+        raise SystemExit("Set OPENAI_API_KEY (or LLM_BASE_URL): both pipelines and the RAGAS judge call an LLM.")
 
     data = load_dataset(args.dataset)
     print(f"Evaluating {len(data)} questions with {settings.LLM_MODEL}...")

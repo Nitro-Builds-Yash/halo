@@ -85,6 +85,25 @@ cp .env.example .env                 # add OPENAI_API_KEY (and optionally TAVILY
 python -m src.rag.ingest --dir ./data   # index .pdf / .txt / .md files
 ```
 
+### Or run everything with Docker
+```bash
+cp .env.example .env    # add your keys
+docker compose up --build
+# API: http://localhost:8000/docs   UI: http://localhost:8501
+```
+Build a smaller image without the torch reranker with `docker compose build --build-arg RERANK=0`.
+
+### Run fully locally (no OpenAI)
+Point Halo at any OpenAI-compatible server, e.g. [Ollama](https://ollama.com):
+```bash
+ollama pull llama3.1 && ollama pull nomic-embed-text
+# in .env:
+LLM_BASE_URL=http://localhost:11434/v1
+LLM_MODEL=llama3.1
+EMBEDDING_MODEL=nomic-embed-text
+```
+Small local models are less reliable at structured output, so expect more fallbacks than with GPT-4o-mini. If you switch embedding models, re-ingest your documents.
+
 ### 2. Run the Streamlit Dashboard
 ```bash
 streamlit run streamlit_app.py
@@ -120,6 +139,8 @@ python -m evals.run_eval --dataset evals/dataset.jsonl
 | `POST` | `/api/v1/query` | Full CRAG run (semantic cache first) |
 | `POST` | `/api/v1/chat/stream` | Server-Sent Events: status per node, then the final verified answer |
 | `POST` | `/api/v1/documents/upload` | Upload `.pdf` / `.txt` / `.md` (size-limited); re-uploading a filename replaces its old chunks |
+| `GET` | `/api/v1/documents` | List indexed documents with chunk counts |
+| `DELETE` | `/api/v1/documents/{source}` | Remove a document from both indexes |
 
 If `API_KEY` is set in `.env`, all `/api/v1/*` routes require an `X-API-Key` header. Allowed browser origins are set with `CORS_ORIGINS`. Every threshold and limit is configurable in `.env` (see [`.env.example`](./.env.example)).
 

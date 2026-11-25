@@ -3,6 +3,7 @@ import sys
 
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -25,13 +26,13 @@ def print_banner():
 
 def display_pipeline_step(node_name: str, update: dict):
     step_icons = {
-        "decompose_query": f"🧩 [blue]Step 1: Decomposing query into sub-questions: {update.get('sub_questions', [])}[/blue]",
+        "decompose_query": f"🧩 [blue]Step 1: Decomposing query into sub-questions: {escape(str(update.get('sub_questions', [])))}[/blue]",
         "retrieve": "🔍 [yellow]Step 2: Hybrid RRF Search (ChromaDB + BM25) & Neural Rerank...[/yellow]",
         "grade_documents": "⚖️ [magenta]Step 3: Auditing chunk relevance against sub-queries...[/magenta]",
         "transform_query": "🔄 [blue]Step 4: Query insufficient. Transforming for external web search...[/blue]",
         "web_search": "🌐 [cyan]Step 5: Executing fallback search via Tavily/Web...[/cyan]",
         "generate": "✍️ [green]Step 6: Synthesizing verified answer with confidence & citations...[/green]",
-        "reflect": f"🧪 [white]Verification: {update.get('verdict', '')}[/white]",
+        "reflect": f"🧪 [white]Verification: {escape(str(update.get('verdict', '')))}[/white]",
         "increment_retry": "⚠️ [red]Answer not verified — retrying with web context...[/red]",
         "graceful_fallback": "🛟 [yellow]Fallback: returning best excerpts with a disclaimer[/yellow]",
     }
@@ -39,7 +40,7 @@ def display_pipeline_step(node_name: str, update: dict):
     console.print(msg)
 
 def ask_question(question: str):
-    console.print(f"\n[bold yellow]User Question:[/bold yellow] {question}\n")
+    console.print(f"\n[bold yellow]User Question:[/bold yellow] {escape(question)}\n")
     cache = SemanticCache.get_instance()
     hit = cached_answer(question, cache)
     if hit:
@@ -77,7 +78,7 @@ def ask_question(question: str):
         cit_table.add_column("Page", justify="center")
         cit_table.add_column("Evidence Snippet", style="dim")
         for c in citations:
-            cit_table.add_row(str(c.get("source")), str(c.get("page") or "N/A"), str(c.get("snippet", "")))
+            cit_table.add_row(escape(str(c.get("source"))), str(c.get("page") or "N/A"), escape(str(c.get("snippet", ""))))
         console.print(cit_table)
 
     # Display Audit Summary Table
@@ -96,8 +97,8 @@ def ask_question(question: str):
 
 def main():
     print_banner()
-    if not settings.OPENAI_API_KEY:
-        console.print("[bold red]Warning:[/bold red] OPENAI_API_KEY is not set in environment or .env file.\n")
+    if not settings.llm_configured:
+        console.print("[bold red]Warning:[/bold red] set OPENAI_API_KEY (or LLM_BASE_URL for a local model) in .env.\n")
     
     while True:
         try:
@@ -112,7 +113,7 @@ def main():
             console.print("\n[dim]Session closed.[/dim]")
             break
         except Exception as e:
-            console.print(f"[bold red]Execution error:[/bold red] {e}")
+            console.print(f"[bold red]Execution error:[/bold red] {escape(str(e))}")
 
 if __name__ == "__main__":
     main()

@@ -112,3 +112,30 @@ def test_web_search_replaces_previous_web_results(monkeypatch):
     assert out["documents"] == ["local", "new"]
     assert out["doc_metadata"][1]["source"] == "https://new"
     assert out["doc_scores"] == [0.9, None]
+
+
+def test_citations_to_unknown_sources_are_dropped():
+    from src.agents.nodes.generation import filter_citations
+
+    metas = [{"source": "policy.pdf"}, {"source": "https://example.com/a"}]
+    cits = [
+        {"source": "policy.pdf", "page": 2, "snippet": "30 days"},
+        {"source": "Policy.PDF", "page": 2, "snippet": "30 days"},      # duplicate (case-insensitive)
+        {"source": "made-up-handbook.pdf", "page": 9, "snippet": "x"},  # invented
+        {"source": "https://example.com/a", "page": None, "snippet": "y"},
+    ]
+    kept = filter_citations(cits, metas)
+    assert [c["source"] for c in kept] == ["policy.pdf", "https://example.com/a"]
+
+
+def test_context_is_capped():
+    from src.agents.nodes.generation import format_context
+
+    docs = ["a" * 5000, "b" * 5000, "c" * 5000]
+    metas = [{"source": f"s{i}"} for i in range(3)]
+    ctx = format_context(docs, metas, max_doc_chars=1000, max_total_chars=2500)
+    assert "a" * 1000 + " [...]" in ctx and "a" * 1001 not in ctx
+    assert "b" * 1000 in ctx
+    assert "c" not in ctx.replace("[Source", "")  # third doc dropped by the budget
+    # the first document is always included, even if it alone exceeds the budget
+    assert format_context(["x" * 50], [{}], max_doc_chars=100, max_total_chars=10).count("x") == 50

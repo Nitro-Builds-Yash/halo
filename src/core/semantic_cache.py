@@ -49,6 +49,7 @@ class SemanticCache:
         self._lock = threading.RLock()
         self._recent_vecs: "OrderedDict[str, List[float]]" = OrderedDict()  # avoid embedding twice per request
         self.cache: Dict[str, Dict[str, Any]] = {}
+        self._mtime: Optional[float] = None
         self._load()
 
     @property
@@ -60,7 +61,7 @@ class SemanticCache:
         return self._embedder
 
     def _can_embed(self) -> bool:
-        return self._embedder is not None or bool(settings.OPENAI_API_KEY)
+        return self._embedder is not None or settings.llm_configured
 
     def _embed(self, query: str) -> List[float]:
         key = cache_key(query)
@@ -89,6 +90,7 @@ class SemanticCache:
         if not self.enabled or not self._can_embed():
             return None
         with self._lock:
+            self._refresh()
             self._evict_expired(time.time())
             if not self.cache:
                 return None
@@ -111,6 +113,7 @@ class SemanticCache:
         try:
             vec = self._embed(query)
             with self._lock:
+                self._refresh()
                 self.cache[cache_key(query)] = {
                     "query": query,
                     "embedding": vec,
@@ -134,14 +137,28 @@ class SemanticCache:
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(self.cache, f, ensure_ascii=False)
             os.replace(tmp, self.cache_path)
+            self._mtime = self._file_mtime()
         except Exception:
             logger.exception("Semantic cache save failed")
+
+    def _file_mtime(self) -> Optional[float]:
+        try:
+            return os.path.getmtime(self.cache_path)
+        except OSError:
+            return None
+
+    def _refresh(self) -> None:
+        """Pick up changes made by another process (e.g. a clear() after ingestion in the API)."""
+        mtime = self._file_mtime()
+        if mtime is not None and mtime != self._mtime:
+            self._load()
 
     def _load(self) -> None:
         if os.path.exists(self.cache_path):
             try:
                 with open(self.cache_path, "r", encoding="utf-8") as f:
                     self.cache = json.load(f)
+                self._mtime = self._file_mtime()
             except Exception:
                 logger.exception("Semantic cache load failed; starting empty")
                 self.cache = {}

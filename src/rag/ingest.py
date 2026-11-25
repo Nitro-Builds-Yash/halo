@@ -46,16 +46,24 @@ def load_file_with_metadata(file_path: str, source_name: str | None = None):
     return docs
 
 
-def delete_source(source: str) -> None:
-    """Remove all chunks of a source from both indexes (used to replace re-uploaded files)."""
+def list_sources():
+    """Indexed documents with their chunk and page counts."""
+    return get_bm25_index().sources()
+
+
+def delete_source(source: str) -> int:
+    """Remove all chunks of a source from both indexes. Returns the number of chunks removed."""
     vs = get_vectorstore()
+    removed_dense = 0
     try:
         existing = vs.get(where={"source": source}).get("ids", [])
         if existing:
             vs.delete(ids=existing)
+            removed_dense = len(existing)
     except Exception:
-        logger.exception("Could not delete old Chroma chunks for %s", source)
-    get_bm25_index().delete_source(source)
+        logger.exception("Could not delete Chroma chunks for %s", source)
+    removed_sparse = get_bm25_index().delete_source(source)
+    return max(removed_dense, removed_sparse)
 
 
 def ingest_file_list(file_paths: List[str], source_names: List[str] | None = None) -> Tuple[int, int]:

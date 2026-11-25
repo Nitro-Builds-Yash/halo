@@ -29,3 +29,20 @@ class IngestResponse(BaseModel):
     total_documents: int
     total_chunks: int
     rejected_files: List[str] = Field(default_factory=list)
+
+
+class DocumentInfo(BaseModel):
+    source: str
+    chunks: int
+    pages: int
+
+
+class DocumentList(BaseModel):
+    documents: List[DocumentInfo]
+    total_chunks: int
+
+
+class DeleteResponse(BaseModel):
+    status: str
+    source: str
+    chunks_removed: int

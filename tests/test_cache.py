@@ -61,3 +61,15 @@ def test_cache_key_stable_across_processes():
     code = "from src.core.semantic_cache import cache_key; print(cache_key('Refund  Window?'))"
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout.strip()
     assert out == cache_key("refund window?")
+
+
+def test_clear_in_other_process_is_seen(tmp_path):
+    import os
+    import time
+
+    a, b = make(tmp_path), make(tmp_path)
+    a.store("refund window?", {"generation": "30 days"})
+    assert b.lookup("refund window?") is not None
+    a.clear()
+    os.utime(a.cache_path, (time.time() + 5, time.time() + 5))
+    assert b.lookup("refund window?") is None
