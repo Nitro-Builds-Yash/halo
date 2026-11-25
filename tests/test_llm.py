@@ -2,7 +2,7 @@ import pytest
 
 pytest.importorskip("langchain_openai")
 
-from src.core import llm  # noqa: E402
+from halo.core import llm  # noqa: E402
 
 
 def test_local_base_url_is_used(monkeypatch):

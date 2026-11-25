@@ -1,7 +1,7 @@
 import subprocess
 import sys
 
-from src.core.semantic_cache import SemanticCache, cache_key
+from halo.core.semantic_cache import SemanticCache, cache_key
 
 
 class FakeEmbedder:
@@ -58,8 +58,12 @@ def test_disabled(tmp_path):
 
 
 def test_cache_key_stable_across_processes():
-    code = "from src.core.semantic_cache import cache_key; print(cache_key('Refund  Window?'))"
-    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout.strip()
+    import os
+
+    code = "from halo.core.semantic_cache import cache_key; print(cache_key('Refund  Window?'))"
+    src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([src, os.environ.get("PYTHONPATH", "")])}
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True, env=env).stdout.strip()
     assert out == cache_key("refund window?")
 
 

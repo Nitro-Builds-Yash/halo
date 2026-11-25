@@ -13,6 +13,4 @@ data
 storage
 evals/results
 tests
-assets
-*.pdf
-generate_dossier.py
+docs

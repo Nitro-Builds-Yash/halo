@@ -5,8 +5,8 @@ pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from src.api import server  # noqa: E402
-from src.core.semantic_cache import SemanticCache  # noqa: E402
+from halo.api import server  # noqa: E402
+from halo.core.semantic_cache import SemanticCache  # noqa: E402
 
 
 @pytest.fixture

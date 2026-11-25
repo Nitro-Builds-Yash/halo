@@ -30,7 +30,7 @@ services:
       CHROMA_HOST: chroma
       CHROMA_PORT: 8000
       CHROMA_PERSIST_DIR: /data/halo
-    command: ["streamlit", "run", "streamlit_app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    command: ["streamlit", "run", "src/halo/ui/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
     ports:

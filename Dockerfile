@@ -12,15 +12,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md main.py ./
 COPY src ./src
 RUN if [ "$RERANK" = "1" ]; then \
         pip install --extra-index-url https://download.pytorch.org/whl/cpu -e ".[ui,rerank]"; \
     else \
         pip install -e ".[ui]"; \
     fi
-
-COPY streamlit_app.py run_cli.py main.py ./
 
 RUN useradd --create-home --uid 1000 halo && mkdir -p /data && chown -R halo:halo /data /app
 USER halo
@@ -30,4 +28,4 @@ EXPOSE 8000 8501
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["halo", "serve", "--host", "0.0.0.0", "--port", "8000"]

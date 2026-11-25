@@ -1,9 +1,9 @@
 import json
 from types import SimpleNamespace
 
-from src.rag import ingest
-from src.rag.bm25 import BM25Index, content_id
-from src.rag.vectorstore import HybridRetriever
+from halo.rag import ingest
+from halo.rag.bm25 import BM25Index, content_id
+from halo.rag.vectorstore import HybridRetriever
 
 DOCS = [
     "Refund policy states returns are allowed within 30 days.",
