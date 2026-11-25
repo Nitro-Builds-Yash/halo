@@ -1,33 +1,67 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "halo"
-version = "0.1.0"
-description = "Agentic Corrective RAG (CRAG) system"
+dynamic = ["version"]
+description = "Agentic Corrective RAG (CRAG) QA system with hybrid retrieval and answer verification"
+readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.11"
 dependencies = [
-    "langchain-core",
-    "langchain-openai",
-    "langgraph",
-    "chromadb",
-    "langchain-chroma",
-    "tavily-python",
+    "langchain-core>=0.3",
+    "langchain-community>=0.3",
+    "langchain-openai>=0.2",
+    "langchain-text-splitters>=0.3",
+    "langchain-chroma>=0.1.4",
+    "langchain-tavily>=0.1",
+    "langgraph>=0.2.40",
+    "chromadb>=0.5",
+    "rank-bm25>=0.2.2",
+    "numpy>=1.26",
+    "pypdf>=4.0",
+    "ddgs>=9.0",
     "pydantic>=2.0",
-    "pydantic-settings",
-    "fastapi",
-    "uvicorn",
-    "sse-starlette",
-    "tiktoken",
-    "duckduckgo-search",
-    "pdfplumber",
-    "unstructured"
+    "pydantic-settings>=2.0",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "python-multipart>=0.0.9",
+    "rich>=13.0",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest",
-    "pytest-asyncio",
-    "httpx"
-]
+ui = ["streamlit>=1.35"]
+rerank = ["sentence-transformers>=2.7", "torch>=2.2"]
+eval = ["ragas>=0.2,<0.4", "pandas>=2.0"]
+docs = ["reportlab>=4.0"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "httpx>=0.27", "ruff>=0.5"]
+
+[project.scripts]
+halo = "halo.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Nitro-Builds-Yash/halo"
+Issues = "https://github.com/Nitro-Builds-Yash/halo/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "halo.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["docs/interview"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = ["E501", "B008", "B905"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/halo/ui/app.py" = ["E402"]  # sys.path fallback must run before package imports
