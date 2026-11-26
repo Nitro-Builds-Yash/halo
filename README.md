@@ -10,7 +10,7 @@
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-API-009688?style=for-the-badge&logo=fastapi&logoColor=white">
   <img alt="Streamlit" src="https://img.shields.io/badge/Streamlit-UI-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white">
   <img alt="Rust" src="https://img.shields.io/badge/Rust-native%20core-B7410E?style=for-the-badge&logo=rust&logoColor=white">
-  <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white">
+  <a href="https://github.com/Nitro-Builds-Yash/halo/pkgs/container/halo"><img alt="Docker image" src="https://img.shields.io/badge/ghcr.io-halo-2496ED?style=for-the-badge&logo=docker&logoColor=white"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-8B949E?style=for-the-badge"></a>
 </p>
 
@@ -117,6 +117,15 @@ halo › What is the refund window?
 <details>
 <summary><b>🐳 Run with Docker</b></summary>
 <br>
+
+Run the published image, no clone or build needed:
+
+```bash
+docker run -p 8000:8000 -e OPENAI_API_KEY=sk-... -v halo-data:/data ghcr.io/nitro-builds-yash/halo:latest
+# open http://localhost:8000
+```
+
+Or build it yourself with Compose:
 
 ```bash
 cp .env.example .env              # add your keys

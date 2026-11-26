@@ -72,3 +72,10 @@ jobs:
             --notes-file notes.md \
             --target "$GITHUB_SHA" \
             --latest
+
+  docker:
+    needs: release
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker-publish.yml
