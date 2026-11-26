@@ -2,6 +2,20 @@
 
 All notable changes to halo are documented here. Each version's section becomes its GitHub release notes.
 
+## [2.6.0] - 2026-11-26
+
+Production AI-engineering features.
+
+#### Added
+- **Prompt-injection guard** (`INJECTION_GUARD`): retrieved passages and web results are scanned for instructions aimed at the model (override, role-change, exfiltration, concealment, tool-hijack phrasing, chat-template markers, invisible characters). Matching lines are replaced before any LLM call, and every prompt marks passages as untrusted data. Answers include `security_flags`.
+- **Usage and cost tracking**: per-question LLM calls, input/output tokens, estimated USD cost by model, fallback calls and latency, returned as `usage`. Built-in prices for common OpenAI models, overridable with `MODEL_PRICES`.
+- **Spending limit** (`MAX_COST_PER_QUERY_USD`): stops before the next LLM call once a question's budget is spent.
+- **`GET /metrics`**: Prometheus counters and a latency histogram covering requests by outcome, tokens, cost, cache hits, injection flags, budget stops and fallbacks.
+- **Model routing** (`FAST_LLM_MODEL`): grading, planning, rewriting and condensing run on a cheaper model.
+- **Model fallback** (`FALLBACK_LLM_MODEL`, `FALLBACK_BASE_URL`): failed calls are retried on a backup model, which can be local.
+- **Agentic multi-hop search** (`AGENTIC_SEARCH`, `MAX_HOPS`): a planner runs follow-up searches for missing facts. Each hop is streamed and returned as `hops`.
+- The web app, the `halo` CLI and `haloctl` show blocked instructions, follow-up searches and per-answer cost.
+
 ## [2.5.0] - 2026-11-26
 
 A built-in web app, more Rust, and a cleaner layout.

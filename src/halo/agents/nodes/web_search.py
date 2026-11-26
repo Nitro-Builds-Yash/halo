@@ -1,4 +1,5 @@
 from halo.agents.state import AgentState
+from halo.core.guard import inspect
 from halo.core.log import get_logger
 from halo.tools import search as search_tool
 
@@ -29,10 +30,14 @@ def web_search(state: AgentState) -> dict:
         logger.exception("web_search: provider failed")
         results = []
 
+    flags = list(state.get("security_flags") or [])
     for r in results:
-        docs.append(r["content"])
-        metas.append({"source": r["url"], "title": r.get("title", ""), "type": "web", "page": None})
+        meta = {"source": r["url"], "title": r.get("title", ""), "type": "web", "page": None}
+        content, found = inspect(r["content"], meta)
+        flags += found
+        docs.append(content)
+        metas.append(meta)
         scores.append(None)
 
     logger.info("web_search: %d result(s) for %r", len(results), query)
-    return {"documents": docs, "doc_metadata": metas, "doc_scores": scores}
+    return {"documents": docs, "doc_metadata": metas, "doc_scores": scores, "security_flags": flags}

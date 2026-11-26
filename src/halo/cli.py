@@ -41,6 +41,9 @@ def _print_step(node: str, update: dict):
     if node == "decompose_query":
         subs = update.get("sub_questions", [])
         console.print(f"🧩 [blue]Query plan[/blue] [dim]{escape('; '.join(subs))}[/dim]")
+    elif node == "multi_hop":
+        for hop in update.get("hops") or []:
+            console.print(f"🧭 [magenta]Follow-up search[/magenta] [dim]{escape(hop['query'])} → {hop['new_chunks']} new[/dim]")
     elif node == "reflect":
         verdict = update.get("verdict", "")
         color = "green" if verdict == "useful" else "yellow"
@@ -52,30 +55,36 @@ def _print_step(node: str, update: dict):
 def _run(question: str, history: list | None = None) -> dict:
     from halo.agents.conversation import condense_question
     from halo.agents.graph import graph
-    from halo.agents.runner import cache_payload, cached_answer, should_cache, summarize
+    from halo.agents.runner import budget_stopped, cache_payload, cached_answer, finish, should_cache, summarize
     from halo.agents.state import initial_state
+    from halo.core import usage
     from halo.core.semantic_cache import SemanticCache
     from halo.core.tracing import run_config
 
-    standalone = condense_question(question, history)
-    if standalone != question:
-        console.print(f"💬 [blue]Follow-up understood as[/blue] [dim]{escape(standalone)}[/dim]")
-    cache = SemanticCache.get_instance()
-    hit = cached_answer(question, cache, standalone)
-    if hit:
-        console.print(f"⚡ [green]Semantic cache hit[/green] [dim](similarity {hit['cached_similarity']})[/dim]")
-        return hit
+    with usage.track() as tracker:
+        standalone = question
+        try:
+            standalone = condense_question(question, history)
+            if standalone != question:
+                console.print(f"💬 [blue]Follow-up understood as[/blue] [dim]{escape(standalone)}[/dim]")
+            cache = SemanticCache.get_instance()
+            hit = cached_answer(question, cache, standalone)
+            if hit:
+                console.print(f"⚡ [green]Semantic cache hit[/green] [dim](similarity {hit['cached_similarity']})[/dim]")
+                return finish(hit, tracker, "cli")
 
-    state = initial_state(standalone)
-    with console.status("[bold green]Thinking...", spinner="dots"):
-        for output in graph.stream(state, config=run_config("cli")):
-            for node, update in output.items():
-                _print_step(node, update or {})
-                state.update(update or {})
-    result = summarize(question, state, standalone)
-    if should_cache(result):
-        cache.store(standalone, cache_payload(state))
-    return result
+            state = initial_state(standalone)
+            with console.status("[bold green]Thinking...", spinner="dots"):
+                for output in graph.stream(state, config=run_config("cli")):
+                    for node, update in output.items():
+                        _print_step(node, update or {})
+                        state.update(update or {})
+        except usage.BudgetExceeded as exc:
+            return finish(budget_stopped(question, standalone, exc), tracker, "cli")
+        result = summarize(question, state, standalone)
+        if should_cache(result):
+            cache.store(standalone, cache_payload(state))
+        return finish(result, tracker, "cli")
 
 
 def _bar(confidence: float) -> str:
@@ -123,12 +132,21 @@ def _print_result(result: dict):
             table.add_row(str(i), escape(str(c.get("source"))), str(c.get("page") or "–"), escape(str(c.get("snippet", ""))))
         console.print(table)
 
+    flags = result.get("security_flags") or []
+    if flags:
+        console.print(f"  [red]🛡 {len(flags)} possible prompt-injection instruction(s) in the sources were neutralized[/red]")
+        for f in flags[:3]:
+            console.print(f"    [dim]{escape(str(f.get('source')))}: {escape(f.get('rule', ''))} · “{escape(f.get('excerpt', ''))[:90]}”[/dim]")
+    u = result.get("usage") or {}
     meta = [
         f"{len(result['documents'])} chunks",
         "web search" if result["web_search_used"] else "local docs only",
         f"{result['retry_count']} retries",
         settings.LLM_MODEL,
     ]
+    if u:
+        meta.append(f"{u.get('llm_calls', 0)} LLM calls · {u.get('input_tokens', 0) + u.get('output_tokens', 0):,} tokens"
+                    f" · ~${u.get('cost_usd', 0):.4f} · {u.get('latency_ms', 0) / 1000:.1f}s")
     console.print(f"  [dim]{' · '.join(meta)}[/dim]\n")
 
 

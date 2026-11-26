@@ -6,7 +6,8 @@ from halo.agents.attribution import attribute
 from halo.agents.schemas import AnswerWithCitations
 from halo.agents.state import AgentState
 from halo.core.config import settings
-from halo.core.llm import get_llm
+from halo.core.guard import UNTRUSTED_NOTE
+from halo.core.llm import get_llm, structured_llm
 from halo.core.log import get_logger
 
 logger = get_logger(__name__)
@@ -23,7 +24,7 @@ _SYSTEM = """You are a rigorous QA assistant.
 5. Give a confidence score between 0.0 and 1.0 for how completely and unambiguously the context answers the question:
    - 0.85 - 1.0: fully answered with direct evidence
    - 0.50 - 0.84: partially answered or inferred
-   - 0.00 - 0.49: insufficient or speculative"""
+   - 0.00 - 0.49: insufficient or speculative""" + "\n" + UNTRUSTED_NOTE
 
 
 def format_context(documents: List[str], metas: List[Dict[str, Any]],
@@ -66,7 +67,7 @@ def generate_answer(question: str, context: str) -> AnswerWithCitations:
         ("system", _SYSTEM),
         ("human", "Context:\n{context}\n\nQuestion: {question}"),
     ])
-    return (prompt | get_llm().with_structured_output(AnswerWithCitations)).invoke(
+    return (prompt | structured_llm(AnswerWithCitations, temperature=None)).invoke(
         {"context": context, "question": question}
     )
 

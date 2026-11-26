@@ -18,6 +18,7 @@
   <a href="#-quickstart"><b>Quickstart</b></a> ·
   <a href="#-how-it-works"><b>How it works</b></a> ·
   <a href="#%EF%B8%8F-usage"><b>Usage</b></a> ·
+  <a href="#-ai-engineering"><b>AI engineering</b></a> ·
   <a href="#-rust-inside"><b>Rust</b></a> ·
   <a href="#-api"><b>API</b></a> ·
   <a href="#%EF%B8%8F-configuration"><b>Configuration</b></a> ·
@@ -33,7 +34,7 @@
 
 <p align="center">
   <img src="./docs/assets/web-app.png" width="100%" alt="The halo web app: a verified answer with a confidence ring, each sentence linked to its source passage, and an unsupported sentence flagged">
-  <br><sub>The built-in web app: every sentence is checked against its source; the last one isn't in the documents, so it's flagged.</sub>
+  <br><sub>The built-in web app: each sentence linked to its source, an unsupported claim flagged, a hidden instruction in a vendor PDF blocked, and the follow-up search, LLM calls and cost shown.</sub>
 </p>
 
 ## ✨ Features
@@ -77,8 +78,8 @@
       Works with OpenAI or any OpenAI-compatible server (Ollama, vLLM, LM Studio), so you can keep everything on your machine.
     </td>
     <td valign="top">
-      <h3>🛡️ Production basics</h3>
-      Optional API key, upload limits, timeouts, LangSmith tracing of every step, Docker Compose, one-click Render deploy, and a tested CI pipeline.
+      <h3>🛡️ Built for production</h3>
+      Prompt-injection guard, per-answer token and cost tracking with a spend limit, model fallback and routing, Prometheus metrics, LangSmith tracing, Docker and CI.
     </td>
   </tr>
 </table>
@@ -205,6 +206,27 @@ flowchart LR
 ```
 </details>
 
+## 🧰 AI engineering
+
+| Capability | What it does | Configure |
+| --- | --- | --- |
+| **Prompt-injection guard** | Every retrieved passage and web page is scanned for instructions aimed at the model ("ignore previous instructions", role markers, exfiltration requests, hidden zero-width text). Matching lines are removed before any LLM sees them, prompts tell the model that passages are data, and the answer reports what was blocked. | `INJECTION_GUARD=sanitize\|flag\|off` |
+| **Cost and token tracking** | Every LLM call (including retries and fallbacks) is counted per question: calls, input/output tokens, estimated USD cost by model, latency. Returned as `usage` in every answer, and as Prometheus counters at `GET /metrics`. | `MODEL_PRICES` |
+| **Spending limit** | Stops a question before the next LLM call once it has spent its budget, and returns a clear message instead of an unverified answer. | `MAX_COST_PER_QUERY_USD` |
+| **Model routing** | Light steps (relevance grading, query planning and rewriting, follow-up condensing, hop planning) run on a cheaper model; answers and verification use the main one. | `FAST_LLM_MODEL` |
+| **Model fallback** | If the main model errors, times out or is rate-limited, the call is retried on a backup model, which can be a local Ollama model. | `FALLBACK_LLM_MODEL`, `FALLBACK_BASE_URL` |
+| **Agentic multi-hop search** | For multi-part questions, a planner reads what was found and runs up to `MAX_HOPS` follow-up searches for missing facts ("who leads the team that built X, and when did they join?"). | `AGENTIC_SEARCH=auto\|on\|off` |
+
+Example `usage` in a response:
+
+```json
+"usage": { "llm_calls": 6, "input_tokens": 9412, "output_tokens": 611, "cost_usd": 0.00178,
+           "fallback_calls": 0, "latency_ms": 4300,
+           "by_model": { "gpt-4o-mini": { "calls": 6, "input_tokens": 9412, "output_tokens": 611, "cost_usd": 0.00178 } } }
+```
+
+Costs are estimates from built-in list prices for common OpenAI models; add or override prices with `MODEL_PRICES='{"model": [input_usd_per_1M, output_usd_per_1M]}'`.
+
 ## 🦀 Rust inside
 
 Halo's hot paths are also written in Rust, in [`crates/`](./crates). Halo uses them automatically when they're installed and falls back to identical pure-Python code when they're not.
@@ -259,6 +281,7 @@ Keyword queries are about **60× faster**. Set `HALO_NATIVE=0` to use the Python
 | Method | Endpoint | Description |
 | --- | --- | --- |
 | `GET` | `/health` | Service status and capabilities |
+| `GET` | `/metrics` | Prometheus metrics: requests by outcome, latency, tokens, cost, cache hits, injection flags, fallbacks |
 | `POST` | `/api/v1/query` | Answer a question (semantic cache first) |
 | `POST` | `/api/v1/chat/stream` | Server-Sent Events: one status event per step, then the final verified answer |
 | `POST` | `/api/v1/documents/upload` | Upload `.pdf` / `.txt` / `.md` files (size-limited) |
@@ -388,6 +411,7 @@ Each release is listed on the [Releases page](https://github.com/Nitro-Builds-Ya
 - [x] Sentence-level citations with unsupported sentences flagged
 - [x] Rust core: BM25, tokenizer, evidence scoring, rank fusion, `haloctl`
 - [x] Built-in web app
+- [x] Prompt-injection guard, cost tracking, model fallback/routing, multi-hop search
 - [ ] Table extraction and OCR for scanned PDFs
 
 ## 📄 License

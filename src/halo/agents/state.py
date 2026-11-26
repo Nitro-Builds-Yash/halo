@@ -17,6 +17,8 @@ class AgentState(TypedDict, total=False):
     retry_count: int                    # regenerations after a failed check
     rewrite_count: int                  # query rewrites / web searches
     is_fallback: bool
+    security_flags: List[Dict[str, Any]]  # passages where the injection guard found instructions
+    hops: List[Dict[str, Any]]            # follow-up searches made by the multi-hop planner
 
 
 GraphState = AgentState
@@ -39,4 +41,6 @@ def initial_state(question: str) -> AgentState:
         "retry_count": 0,
         "rewrite_count": 0,
         "is_fallback": False,
+        "security_flags": [],
+        "hops": [],
     }

@@ -7,14 +7,15 @@ from halo.agents.nodes.generation import format_context
 from halo.agents.schemas import GradeAnswer, GradeHallucinations
 from halo.agents.state import AgentState
 from halo.core.config import settings
-from halo.core.llm import get_llm
+from halo.core.guard import UNTRUSTED_NOTE
+from halo.core.llm import structured_llm
 from halo.core.log import get_logger
 
 logger = get_logger(__name__)
 
 _GROUNDING_SYSTEM = """You are a grader assessing whether an LLM answer is grounded in / supported by a set of retrieved facts.
 Answer 'yes' only if every factual claim in the answer is supported by the facts. Otherwise answer 'no'.
-An answer that only says the information is not available counts as grounded."""
+An answer that only says the information is not available counts as grounded.""" + "\n" + UNTRUSTED_NOTE
 
 _ANSWER_SYSTEM = "Assess whether the answer addresses and resolves the user question. Give a binary score 'yes' or 'no'."
 
@@ -24,7 +25,7 @@ def check_grounding(context: str, generation: str) -> bool:
         ("system", _GROUNDING_SYSTEM),
         ("human", "Set of facts:\n\n{documents}\n\nLLM answer:\n{generation}"),
     ])
-    res = (prompt | get_llm(0.0).with_structured_output(GradeHallucinations)).invoke(
+    res = (prompt | structured_llm(GradeHallucinations)).invoke(
         {"documents": context, "generation": generation}
     )
     return res.binary_score == "yes"
@@ -35,7 +36,7 @@ def check_answers_question(question: str, generation: str) -> bool:
         ("system", _ANSWER_SYSTEM),
         ("human", "User question:\n{question}\n\nLLM answer:\n{generation}"),
     ])
-    res = (prompt | get_llm(0.0).with_structured_output(GradeAnswer)).invoke(
+    res = (prompt | structured_llm(GradeAnswer)).invoke(
         {"question": question, "generation": generation}
     )
     return res.binary_score == "yes"

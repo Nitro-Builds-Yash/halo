@@ -1,3 +1,4 @@
+import contextvars
 import json
 import os
 import shutil
@@ -8,15 +9,16 @@ from typing import AsyncGenerator, List
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from halo import __version__ as VERSION
 from halo.agents.conversation import condense_question
 from halo.agents.graph import graph
-from halo.agents.runner import cache_payload, cached_answer, should_cache, summarize
+from halo.agents.runner import budget_stopped, cache_payload, cached_answer, finish, should_cache, summarize
 from halo.agents.state import initial_state
 from halo.api.schemas import DeleteResponse, DocumentList, IngestResponse, QueryRequest, QueryResponse
+from halo.core import metrics, usage
 from halo.core.config import settings
 from halo.core.log import get_logger
 from halo.core.semantic_cache import SemanticCache
@@ -54,6 +56,7 @@ def web_app():
 
 NODE_STATUS = {
     "decompose_query": "Analyzing query structure and planning retrieval...",
+    "multi_hop": "Checking whether follow-up searches are needed...",
     "retrieve": "Retrieving internal knowledge from hybrid index (Chroma + BM25)...",
     "grade_documents": "Evaluating chunk relevance (cross-encoder gate + batch grading)...",
     "transform_query": "Local context insufficient. Rewriting query for web search...",
@@ -96,6 +99,10 @@ def health():
         "auth_required": bool(settings.API_KEY),
         "tracing": tracing_enabled(),
         "keyword_backend": keyword_backend(),
+        "models": {"main": settings.LLM_MODEL, "fast": settings.FAST_LLM_MODEL or settings.LLM_MODEL,
+                   "fallback": settings.FALLBACK_LLM_MODEL or None},
+        "injection_guard": settings.INJECTION_GUARD,
+        "agentic_search": settings.AGENTIC_SEARCH,
         "features": [
             "semantic_cache_entrypoint",
             "hybrid_bm25_dense_rrf",
@@ -109,27 +116,50 @@ def health():
             "citation_links",
             "sentence_level_citations",
             "web_app",
+            "prompt_injection_guard",
+            "usage_and_cost_tracking",
+            "model_fallback_and_routing",
+            "agentic_multi_hop_search",
         ],
     }
 
 
+def _in_context(fn, *args):
+    """Run `fn` in a worker thread with the current context, so the active usage tracker
+    (a ContextVar) sees the LLM calls made there."""
+    ctx = contextvars.copy_context()
+    return run_in_threadpool(ctx.run, fn, *args)
+
+
+def message_event(result: dict) -> dict:
+    return {"event": "message", "content": result["generation"], "confidence": result["confidence"],
+            "citations": result["citations"], "sentences": result["sentences"],
+            "unsupported_sentences": result["unsupported_sentences"], "verdict": result["verdict"],
+            "fallback": result["is_fallback"], "cached": result["cached"],
+            "security_flags": result["security_flags"], "hops": result["hops"], "usage": result["usage"]}
+
+
 @app.post("/api/v1/query", response_model=QueryResponse, dependencies=[Depends(require_api_key)])
 async def sync_query(query: QueryRequest):
-    standalone = await run_in_threadpool(condense_question, query.question, query.history_dicts())
-    hit = await run_in_threadpool(cached_answer, query.question, semantic_cache, standalone)
-    if hit:
-        return QueryResponse(**hit)
+    with usage.track() as tracker:
+        standalone = query.question
+        try:
+            standalone = await _in_context(condense_question, query.question, query.history_dicts())
+            hit = await _in_context(cached_answer, query.question, semantic_cache, standalone)
+            if hit:
+                return QueryResponse(**finish(hit, tracker, "api"))
+            state = await graph.ainvoke(initial_state(standalone), config=run_config("api"))
+        except usage.BudgetExceeded as exc:
+            return QueryResponse(**finish(budget_stopped(query.question, standalone, exc), tracker, "api"))
+        except Exception:
+            logger.exception("Pipeline failed")
+            metrics.inc("halo_requests_total", entrypoint="api", outcome="error")
+            raise HTTPException(status_code=500, detail="The question could not be processed. Check server logs.") from None
 
-    try:
-        state = await graph.ainvoke(initial_state(standalone), config=run_config("api"))
-    except Exception:
-        logger.exception("Pipeline failed")
-        raise HTTPException(status_code=500, detail="The question could not be processed. Check server logs.") from None
-
-    result = summarize(query.question, state, standalone)
-    if should_cache(result):
-        await run_in_threadpool(semantic_cache.store, standalone, cache_payload(state))
-    return QueryResponse(**result)
+        result = summarize(query.question, state, standalone)
+        if should_cache(result):
+            await run_in_threadpool(semantic_cache.store, standalone, cache_payload(state))
+        return QueryResponse(**finish(result, tracker, "api"))
 
 
 @app.post("/api/v1/chat/stream", dependencies=[Depends(require_api_key)])
@@ -138,46 +168,60 @@ async def chat_stream(query: QueryRequest):
     sent as a `message` event, so users never see an answer that is later rejected."""
 
     async def event_generator() -> AsyncGenerator[str, None]:
-        standalone = await run_in_threadpool(condense_question, query.question, query.history_dicts())
-        if standalone != query.question:
-            yield sse({"event": "status", "node": "condense", "message": f"Follow-up understood as: {standalone}"})
-        hit = await run_in_threadpool(cached_answer, query.question, semantic_cache, standalone)
-        if hit:
-            yield sse({"event": "status", "node": "cache", "message": "Matched semantic cache",
-                       "similarity": hit["cached_similarity"]})
-            yield sse({"event": "message", "content": hit["generation"], "confidence": hit["confidence"],
-                       "citations": hit["citations"], "sentences": hit["sentences"],
-                       "cached": True, "fallback": False})
+        with usage.track() as tracker:
+            standalone = query.question
+            state = None
+            try:
+                standalone = await _in_context(condense_question, query.question, query.history_dicts())
+                if standalone != query.question:
+                    yield sse({"event": "status", "node": "condense", "message": f"Follow-up understood as: {standalone}"})
+                hit = await _in_context(cached_answer, query.question, semantic_cache, standalone)
+                if hit:
+                    yield sse({"event": "status", "node": "cache", "message": "Matched semantic cache",
+                               "similarity": hit["cached_similarity"]})
+                    yield sse(message_event(finish(hit, tracker, "stream")))
+                    yield sse({"event": "done"})
+                    return
+
+                state = initial_state(standalone)
+                async for event in graph.astream_events(state, version="v2", config=run_config("stream")):
+                    kind, name = event.get("event"), event.get("name")
+                    if name not in NODE_STATUS:
+                        continue
+                    if kind == "on_chain_start":
+                        yield sse({"event": "status", "node": name, "message": NODE_STATUS[name]})
+                    elif kind == "on_chain_end":
+                        output = event.get("data", {}).get("output")
+                        if isinstance(output, dict):
+                            state.update(output)
+                            if name == "multi_hop":
+                                for hop in output.get("hops") or []:
+                                    yield sse({"event": "status", "node": "hop",
+                                               "message": f"Follow-up search: {hop['query']}"})
+            except usage.BudgetExceeded as exc:
+                yield sse(message_event(finish(budget_stopped(query.question, standalone, exc), tracker, "stream")))
+                yield sse({"event": "done"})
+                return
+            except Exception:
+                logger.exception("Streaming pipeline failed")
+                metrics.inc("halo_requests_total", entrypoint="stream", outcome="error")
+                yield sse({"event": "error", "error": "The question could not be processed."})
+                return
+
+            result = summarize(query.question, state, standalone)
+            if should_cache(result):
+                await run_in_threadpool(semantic_cache.store, standalone, cache_payload(state))
+            yield sse(message_event(finish(result, tracker, "stream")))
             yield sse({"event": "done"})
-            return
-
-        state = initial_state(standalone)
-        try:
-            async for event in graph.astream_events(state, version="v2", config=run_config("stream")):
-                kind, name = event.get("event"), event.get("name")
-                if name not in NODE_STATUS:
-                    continue
-                if kind == "on_chain_start":
-                    yield sse({"event": "status", "node": name, "message": NODE_STATUS[name]})
-                elif kind == "on_chain_end":
-                    output = event.get("data", {}).get("output")
-                    if isinstance(output, dict):
-                        state.update(output)
-        except Exception:
-            logger.exception("Streaming pipeline failed")
-            yield sse({"event": "error", "error": "The question could not be processed."})
-            return
-
-        result = summarize(query.question, state, standalone)
-        if should_cache(result):
-            await run_in_threadpool(semantic_cache.store, standalone, cache_payload(state))
-        yield sse({"event": "message", "content": result["generation"], "confidence": result["confidence"],
-                   "citations": result["citations"], "sentences": result["sentences"],
-                   "unsupported_sentences": result["unsupported_sentences"], "verdict": result["verdict"],
-                   "fallback": result["is_fallback"], "cached": False})
-        yield sse({"event": "done"})
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.get("/metrics", include_in_schema=False)
+def prometheus_metrics():
+    """Prometheus text format: requests, outcomes, latency, tokens, estimated cost, cache hits,
+    injection flags, budget stops and model fallbacks."""
+    return PlainTextResponse(metrics.render(), media_type="text/plain; version=0.0.4")
 
 
 @app.post("/api/v1/documents/upload", response_model=IngestResponse, dependencies=[Depends(require_api_key)])

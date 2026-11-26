@@ -46,3 +46,9 @@ class SubQueries(BaseModel):
     sub_questions: List[str] = Field(
         description="List of 2 to 4 atomic sub-questions needed to thoroughly answer a complex, multi-hop, or comparative query."
     )
+
+
+class HopDecision(BaseModel):
+    enough: bool = Field(description="True if the notes already contain everything needed to answer the question")
+    next_query: str = Field(default="", description="If not enough: one focused search query for the missing fact")
+    missing: str = Field(default="", description="What is still missing, in a few words")
