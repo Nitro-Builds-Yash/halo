@@ -154,6 +154,15 @@ halo --version              # … keyword search: rust (halo-native 0.1.0)
 ```
 
 The Rust index stores term frequencies as posting lists and only touches documents that contain a query term, and it releases Python's GIL while it works. It gives exactly the same scores and ranking as the pure-Python backend, which CI checks on every change. Set `HALO_NATIVE=0` to switch back to Python.
+
+Measured by [`benchmarks/bm25_bench.py`](./benchmarks/bm25_bench.py) in CI (GitHub Actions runner, synthetic 20,000-document corpus, 200 queries):
+
+| Backend | Tokenize | Build index | Query p50 | Query p95 |
+| --- | --- | --- | --- | --- |
+| Rust (halo-native) | 0.30 s | 0.35 s | **0.43 ms** | **0.84 ms** |
+| Python (rank-bm25) | 0.35 s | 0.41 s | 26.3 ms | 39.2 ms |
+
+Queries are about **60× faster**. Tokenizing and building gain little, because that time is mostly spent moving Python strings in and out.
 </details>
 
 <details>
