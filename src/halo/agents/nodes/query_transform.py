@@ -16,7 +16,7 @@ def rewrite_query(question: str) -> str:
         ("system", _SYSTEM),
         ("human", "Question: {question}\n\nSearch query:"),
     ])
-    return (prompt | get_llm(0.0) | StrOutputParser()).invoke({"question": question}).strip()
+    return (prompt | get_llm(0.0, task="fast") | StrOutputParser()).invoke({"question": question}).strip()
 
 
 def transform_query(state: AgentState) -> dict:

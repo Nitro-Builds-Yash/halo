@@ -4,7 +4,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from halo.agents.schemas import SubQueries
 from halo.agents.state import AgentState
-from halo.core.llm import get_llm
+from halo.core.llm import structured_llm
 from halo.core.log import get_logger
 
 logger = get_logger(__name__)
@@ -28,7 +28,7 @@ def decompose_query(state: AgentState) -> dict:
         return {"sub_questions": [question]}
 
     prompt = ChatPromptTemplate.from_messages([("system", _SYSTEM), ("human", "Question: {question}")])
-    chain = prompt | get_llm(0.0).with_structured_output(SubQueries)
+    chain = prompt | structured_llm(SubQueries, task="fast")
     try:
         res = chain.invoke({"question": question})
         sub_qs = [q for q in (res.sub_questions or []) if q.strip()][:3] or [question]

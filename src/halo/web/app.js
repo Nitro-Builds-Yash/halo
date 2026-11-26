@@ -10,7 +10,7 @@
     condense: "Understanding follow-up", cache: "Cache hit", decompose_query: "Planning",
     retrieve: "Hybrid search", grade_documents: "Relevance gate", transform_query: "Rewriting query",
     web_search: "Web search", generate: "Writing answer", reflect: "Verifying",
-    increment_retry: "Retrying", graceful_fallback: "Fallback",
+    increment_retry: "Retrying", graceful_fallback: "Fallback", multi_hop: "Follow-up check", hop: "Follow-up search",
   };
 
   // ---------- small helpers ----------
@@ -208,6 +208,16 @@
       });
     }
 
+    const flags = msg.security_flags || [];
+    if (flags.length) {
+      const box = el("div", "guard", `<b>🛡 ${flags.length} hidden instruction${flags.length > 1 ? "s" : ""} blocked.</b>
+        Text in the sources tried to instruct the AI; halo ${flags[0].action === "flagged" ? "flagged" : "removed"} it before answering.`);
+      const list = el("ul");
+      flags.slice(0, 4).forEach((f) => list.appendChild(el("li", "", `${esc(f.source || "source")}${f.page != null ? `, p.${esc(f.page)}` : ""}: <q>${esc(f.excerpt)}</q>`)));
+      box.appendChild(list);
+      card.appendChild(box);
+    }
+
     if (order.length) {
       const wrap = el("div", "sources");
       order.forEach((s, i) => {
@@ -219,6 +229,17 @@
       });
       card.appendChild(wrap);
     }
+
+    const meta = [];
+    (msg.hops || []).forEach((h) => meta.push(`🧭 searched “${esc(h.query)}”`));
+    const u = msg.usage;
+    if (u) {
+      const tokens = (u.input_tokens || 0) + (u.output_tokens || 0);
+      meta.push(`${u.llm_calls} LLM call${u.llm_calls === 1 ? "" : "s"}`, `${tokens.toLocaleString()} tokens`,
+        `~$${(u.cost_usd || 0).toFixed(4)}`, `${((u.latency_ms || 0) / 1000).toFixed(1)}s`);
+      if (u.fallback_calls) meta.push(`${u.fallback_calls} via fallback model`);
+    }
+    if (meta.length) card.appendChild(el("div", "meta-row", meta.map((m) => `<span>${m}</span>`).join("")));
   }
 
   // ---------- chat flow ----------

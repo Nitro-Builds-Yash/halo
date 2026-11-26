@@ -18,6 +18,22 @@ class Settings(BaseSettings):
     LLM_TIMEOUT_SECONDS: float = 60.0
     LLM_MAX_RETRIES: int = 2
 
+    # Routing and fallback
+    FAST_LLM_MODEL: str = ""       # cheaper model for grading, planning, rewriting (default: LLM_MODEL)
+    FALLBACK_LLM_MODEL: str = ""   # retried when the primary model errors or times out
+    FALLBACK_BASE_URL: str = ""    # e.g. a local Ollama server as the fallback (default: LLM_BASE_URL)
+
+    # Cost tracking
+    MODEL_PRICES: str = ""         # JSON {"model": [input_usd_per_1M, output_usd_per_1M]} to add/override prices
+    MAX_COST_PER_QUERY_USD: float = 0.0  # stop a question once it has spent this much (0 = no limit)
+
+    # Prompt-injection guard: "sanitize" neutralizes injected instructions, "flag" only reports, "off"
+    INJECTION_GUARD: str = "sanitize"
+
+    # Agentic multi-hop search: "auto" (multi-part questions), "on" (every question) or "off"
+    AGENTIC_SEARCH: str = "auto"
+    MAX_HOPS: int = 2
+
     # RAG Settings
     CHROMA_PERSIST_DIR: str = "./chroma_db"   # local mode (single process); also holds BM25 + cache files
     CHROMA_HOST: str = ""                       # set to use a Chroma server (needed when API and UI run separately)

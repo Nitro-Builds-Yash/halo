@@ -38,7 +38,7 @@ def rewrite_standalone(question: str, transcript: str) -> str:
         ("system", _SYSTEM),
         ("human", "Conversation:\n{transcript}\n\nLatest message: {question}\n\nStandalone question:"),
     ])
-    return (prompt | get_llm(0.0) | StrOutputParser()).invoke({"transcript": transcript, "question": question})
+    return (prompt | get_llm(0.0, task="fast") | StrOutputParser()).invoke({"transcript": transcript, "question": question})
 
 
 def condense_question(question: str, history: Optional[List[Dict[str, str]]] = None) -> str:

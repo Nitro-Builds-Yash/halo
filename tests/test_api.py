@@ -152,3 +152,48 @@ def test_web_app_is_served(client):
     assert "/static/app.js" in page.text
     assert client.get("/static/app.js").status_code == 200
     assert client.get("/static/styles.css").status_code == 200
+
+
+def test_metrics_endpoint_and_usage_in_response(client, monkeypatch):
+    from halo.core import metrics, usage
+
+    metrics.reset()
+
+    class FakeGraph:
+        async def ainvoke(self, state, config=None):
+            from types import SimpleNamespace
+
+            msg = SimpleNamespace(usage_metadata={"input_tokens": 100, "output_tokens": 20},
+                                  response_metadata={"model_name": "gpt-4o-mini"})
+            usage.UsageCallback("gpt-4o-mini").on_llm_end(
+                SimpleNamespace(generations=[[SimpleNamespace(message=msg)]], llm_output={}))
+            return {**state, "generation": "30 days", "confidence": 0.9, "verdict": "useful",
+                    "security_flags": [{"source": "evil.pdf", "rule": "override", "excerpt": "x", "action": "neutralized"}]}
+
+    monkeypatch.setattr(server, "graph", FakeGraph())
+    data = client.post("/api/v1/query", json={"question": "refund?"}).json()
+    assert data["usage"]["input_tokens"] == 100 and data["usage"]["cost_usd"] > 0
+    assert data["security_flags"][0]["source"] == "evil.pdf"
+    text = client.get("/metrics").text
+    assert 'halo_requests_total{entrypoint="api",outcome="verified"} 1' in text
+    assert 'halo_injection_flags_total 1' in text
+    assert 'halo_llm_tokens_total{kind="input",model="gpt-4o-mini"} 100' in text
+
+
+def test_budget_exceeded_response(client, monkeypatch):
+    from halo.core import usage
+
+    class Broke:
+        async def ainvoke(self, state, config=None):
+            raise usage.BudgetExceeded(0.03, 0.02)
+
+    monkeypatch.setattr(server, "graph", Broke())
+    data = client.post("/api/v1/query", json={"question": "refund?"}).json()
+    assert data["verdict"] == "budget_exceeded" and data["is_fallback"] is True
+
+
+def test_health_reports_ai_settings(client):
+    h = client.get("/health").json()
+    assert set(h["models"]) == {"main", "fast", "fallback"}
+    assert h["injection_guard"] in ("sanitize", "flag", "off")
+    assert "prompt_injection_guard" in h["features"]

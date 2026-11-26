@@ -156,7 +156,10 @@ a { color: var(--accent); text-decoration: none; }
 a.source:hover { border-color: var(--accent); color: var(--ink); }
 .source b { color: var(--accent); font-family: var(--mono); font-size: 11px; }
 .source span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.meta-row { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 12px; margin-top: 12px; }
+.meta-row { display: flex; gap: 6px 14px; flex-wrap: wrap; color: var(--muted); font-size: 12px; margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.guard { margin-top: 14px; border: 1px solid rgba(255,107,107,.35); background: rgba(255,107,107,.08); border-radius: 10px; padding: 10px 12px; font-size: 13px; color: var(--ink-2); }
+.guard b { color: var(--bad); }
+.guard ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; }
 
 .error-card { border-color: var(--bad); color: var(--bad); }
 .typing { display: inline-flex; gap: 4px; padding: 6px 0; }

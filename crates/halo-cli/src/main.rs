@@ -206,6 +206,53 @@ fn print_answer(msg: &Value) {
             }
         }
     }
+    let flags = msg["security_flags"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    if !flags.is_empty() {
+        println!(
+            "\n  {}",
+            ui::red(&format!(
+                "🛡 {} hidden instruction(s) in the sources were blocked",
+                flags.len()
+            ))
+        );
+        for f in flags.iter().take(3) {
+            println!(
+                "    {}",
+                ui::dim(&format!(
+                    "{}: “{}”",
+                    f["source"].as_str().unwrap_or("?"),
+                    f["excerpt"].as_str().unwrap_or("")
+                ))
+            );
+        }
+    }
+    let mut meta: Vec<String> = msg["hops"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|h| h["query"].as_str().map(|q| format!("searched “{q}”")))
+        .collect();
+    let u = &msg["usage"];
+    if u.is_object() {
+        let tokens =
+            u["input_tokens"].as_i64().unwrap_or(0) + u["output_tokens"].as_i64().unwrap_or(0);
+        meta.push(format!(
+            "{} LLM calls",
+            u["llm_calls"].as_i64().unwrap_or(0)
+        ));
+        meta.push(format!("{tokens} tokens"));
+        meta.push(format!("~${:.4}", u["cost_usd"].as_f64().unwrap_or(0.0)));
+        meta.push(format!(
+            "{:.1}s",
+            u["latency_ms"].as_f64().unwrap_or(0.0) / 1000.0
+        ));
+    }
+    if !meta.is_empty() {
+        println!("\n  {}", ui::dim(&meta.join(" · ")));
+    }
     println!();
 }
 
@@ -237,7 +284,7 @@ fn ask(api: &Api, question: &str, history: &[Value], raw: bool) -> Result<Value>
             Some("status") if !raw => {
                 let node = event["node"].as_str().unwrap_or("");
                 let (icon, label) = ui::step_label(node);
-                let detail = if node == "condense" {
+                let detail = if node == "condense" || node == "hop" {
                     event["message"].as_str().unwrap_or("").to_string()
                 } else {
                     String::new()
@@ -248,7 +295,9 @@ fn ask(api: &Api, question: &str, history: &[Value], raw: bool) -> Result<Value>
                     ui::dim(&format!(
                         "{:.1}s {}",
                         started.elapsed().as_secs_f64(),
-                        detail.trim_start_matches("Follow-up understood as: ")
+                        detail
+                            .trim_start_matches("Follow-up understood as: ")
+                            .trim_start_matches("Follow-up search: ")
                     ))
                 );
                 std::io::stdout().flush().ok();

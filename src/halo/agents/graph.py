@@ -3,6 +3,7 @@ from langgraph.graph import END, StateGraph
 from halo.agents.nodes.fallback import graceful_fallback
 from halo.agents.nodes.generation import generate
 from halo.agents.nodes.grading import grade_documents
+from halo.agents.nodes.multi_hop import multi_hop
 from halo.agents.nodes.query_decompose import decompose_query
 from halo.agents.nodes.query_transform import transform_query
 from halo.agents.nodes.reflection import reflect, route_after_reflect
@@ -32,6 +33,7 @@ def build_graph():
 
     workflow.add_node("decompose_query", decompose_query)
     workflow.add_node("retrieve", retrieve)
+    workflow.add_node("multi_hop", multi_hop)
     workflow.add_node("grade_documents", grade_documents)
     workflow.add_node("transform_query", transform_query)
     workflow.add_node("web_search", web_search)
@@ -42,7 +44,8 @@ def build_graph():
 
     workflow.set_entry_point("decompose_query")
     workflow.add_edge("decompose_query", "retrieve")
-    workflow.add_edge("retrieve", "grade_documents")
+    workflow.add_edge("retrieve", "multi_hop")
+    workflow.add_edge("multi_hop", "grade_documents")
     workflow.add_conditional_edges(
         "grade_documents",
         decide_to_generate,

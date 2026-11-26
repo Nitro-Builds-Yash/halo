@@ -81,6 +81,8 @@ pub fn wrap(text: &str, width: usize, indent: &str) -> String {
 pub fn step_label(node: &str) -> (&'static str, &'static str) {
     match node {
         "condense" => ("💬", "Follow-up understood"),
+        "multi_hop" => ("🧭", "Checking for follow-up searches"),
+        "hop" => ("🧭", "Follow-up search"),
         "cache" => ("⚡", "Semantic cache hit"),
         "decompose_query" => ("🧩", "Planning the query"),
         "retrieve" => ("🔍", "Hybrid search"),
