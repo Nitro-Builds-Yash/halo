@@ -9,6 +9,7 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Upload
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from halo import __version__ as VERSION
 from halo.agents.conversation import condense_question
@@ -41,6 +42,15 @@ app.add_middleware(
 )
 
 semantic_cache = SemanticCache.get_instance()
+
+# The web app (src/halo/web): index at "/", assets under /static.
+WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
+app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def web_app():
+    return FileResponse(os.path.join(WEB_DIR, "index.html"), media_type="text/html")
 
 NODE_STATUS = {
     "decompose_query": "Analyzing query structure and planning retrieval...",
@@ -98,6 +108,7 @@ def health():
             "multi_turn_chat",
             "citation_links",
             "sentence_level_citations",
+            "web_app",
         ],
     }
 

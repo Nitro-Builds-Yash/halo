@@ -1,9 +1,9 @@
 [package]
 name = "halo-native"
-version = "0.1.0"
-edition = "2021"
-description = "Native (Rust) BM25 index and tokenizer for halo"
-license = "MIT"
+version = "0.2.0"
+edition.workspace = true
+description = "Native (Rust) hot paths for halo: BM25, tokenizer, evidence scoring, rank fusion"
+license.workspace = true
 publish = false
 
 [lib]
@@ -18,7 +18,3 @@ rayon = "1.10"
 default = []
 extension-module = ["pyo3/extension-module"]
 
-[profile.release]
-lto = "fat"
-codegen-units = 1
-opt-level = 3

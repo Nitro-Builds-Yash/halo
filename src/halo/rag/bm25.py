@@ -13,7 +13,7 @@ _TOKEN_SPLIT = re.compile(r"[^\w\s]")
 
 
 def _load_native():
-    """The Rust extension (`pip install ./rust`), unless disabled with HALO_NATIVE=0."""
+    """The Rust extension (`pip install ./crates/halo-native`), unless disabled with HALO_NATIVE=0."""
     if os.environ.get("HALO_NATIVE", "1").lower() in ("0", "false", "no"):
         return None
     try:

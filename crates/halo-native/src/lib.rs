@@ -1,4 +1,4 @@
-//! Native hot paths for halo's keyword search.
+//! Native hot paths for halo: keyword search, sentence-evidence scoring and rank fusion.
 //!
 //! * `tokenize` matches Python's `re.sub(r"[^\w\s]", " ", text.lower()).split()`.
 //! * `Bm25Index` matches `rank_bm25.BM25Plus` (k1 = 1.5, b = 0.75, delta = 1.0) score for score,
@@ -7,6 +7,9 @@
 //!   over every document per term.
 //!
 //! Both are exposed to Python through PyO3; halo uses them when `halo_native` is installed.
+
+pub mod evidence;
+pub mod fusion;
 
 use pyo3::prelude::*;
 use rayon::prelude::*;
@@ -185,9 +188,38 @@ impl PyBm25 {
     }
 }
 
+/// Content words of a text, as `halo.agents.attribution.content_words`.
+#[pyfunction]
+fn content_words(text: &str) -> Vec<String> {
+    evidence::content_words(text)
+}
+
+/// Support score of one sentence against one passage.
+#[pyfunction]
+fn support_score(sentence: &str, passage: &str) -> f64 {
+    evidence::support_score(sentence, passage)
+}
+
+/// Support scores of one sentence against many passages (parallel, GIL released).
+#[pyfunction]
+fn support_scores(py: Python<'_>, sentence: String, passages: Vec<String>) -> Vec<f64> {
+    py.allow_threads(|| evidence::support_scores(&sentence, &passages))
+}
+
+/// Reciprocal Rank Fusion of ranked key lists -> [(key, score)] best first.
+#[pyfunction]
+#[pyo3(signature = (rankings, k = 60.0))]
+fn rrf_fuse(rankings: Vec<Vec<String>>, k: f64) -> Vec<(String, f64)> {
+    fusion::rrf_fuse(&rankings, k)
+}
+
 #[pymodule]
 fn halo_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(tokenize, m)?)?;
+    m.add_function(wrap_pyfunction!(content_words, m)?)?;
+    m.add_function(wrap_pyfunction!(support_score, m)?)?;
+    m.add_function(wrap_pyfunction!(support_scores, m)?)?;
+    m.add_function(wrap_pyfunction!(rrf_fuse, m)?)?;
     m.add_function(wrap_pyfunction!(tokenize_many, m)?)?;
     m.add_class::<PyBm25>()?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;

@@ -1,17 +1,18 @@
 # syntax=docker/dockerfile:1
+# Build from the repository root:  docker build -f deploy/Dockerfile .
 
 # ---- Stage 1: compile the optional Rust extension (halo-native) into a wheel ----
 # Set NATIVE=0 to skip it; Halo then uses its pure-Python keyword search.
 FROM python:3.11-slim AS native
 ARG NATIVE=1
 WORKDIR /build
-COPY rust ./rust
+COPY crates ./crates
 RUN mkdir -p /wheels && if [ "$NATIVE" = "1" ]; then \
         apt-get update && apt-get install -y --no-install-recommends curl ca-certificates gcc libc6-dev \
         && rm -rf /var/lib/apt/lists/* \
         && curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal \
         && pip install --no-cache-dir "maturin>=1.7,<2" \
-        && PATH="/root/.cargo/bin:$PATH" maturin build --release -m rust/Cargo.toml -o /wheels; \
+        && PATH="/root/.cargo/bin:$PATH" maturin build --release -m crates/halo-native/Cargo.toml -o /wheels; \
     fi
 
 # ---- Stage 2: the runtime image (no Rust toolchain in it) ----

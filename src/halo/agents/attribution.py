@@ -8,6 +8,8 @@ passage supports are marked `supported: False` so the UI can flag them.
 import re
 from typing import Any, Dict, List, Optional, Sequence
 
+from halo.rag.bm25 import native  # optional Rust extension (halo-native); None when not installed
+
 SUPPORT_THRESHOLD = 0.5      # share of a sentence's content words found in the evidence
 FALLBACK_THRESHOLD = 0.6     # stricter bar when the model named no passage, or a wrong one
 _MIN_CONTENT_WORDS = 3       # shorter sentences ("Yes.", "In short:") are not scored
@@ -34,12 +36,23 @@ def split_sentences(text: str) -> List[str]:
 
 
 def content_words(text: str) -> List[str]:
+    if native:
+        return native.content_words(text)
     return [w for w in _WORD.findall(text.lower()) if w not in _STOPWORDS and (len(w) > 2 or w.isdigit())]
+
+
+def support_scores(sentence: str, passages: Sequence[str]) -> List[float]:
+    """support_score of one sentence against many passages (parallel in Rust when available)."""
+    if native:
+        return native.support_scores(sentence, list(passages))
+    return [support_score(sentence, p) for p in passages]
 
 
 def support_score(sentence: str, passage: str) -> float:
     """Fraction of the sentence's distinct content words that appear in the passage.
     Numbers must match exactly, which catches the most damaging errors (30 vs 45 days)."""
+    if native:
+        return native.support_score(sentence, passage)
     words = set(content_words(sentence))
     if not words:
         return 0.0
@@ -50,7 +63,8 @@ def support_score(sentence: str, passage: str) -> float:
 def best_evidence(sentence: str, passage: str, max_chars: int = 300) -> str:
     """The sentence of `passage` that best supports `sentence`, trimmed for display."""
     candidates = split_sentences(passage) or [passage]
-    best = max(candidates, key=lambda s: support_score(sentence, s))
+    scores = support_scores(sentence, candidates)
+    best = candidates[max(range(len(candidates)), key=scores.__getitem__)]
     return best if len(best) <= max_chars else best[: max_chars - 1] + "…"
 
 
@@ -80,8 +94,9 @@ def attribute(answer: str, labelled: Optional[Sequence[Dict[str, Any]]],
             continue
 
         valid_claims = [c - 1 for c in claimed if isinstance(c, int) and 1 <= c <= len(documents)]
-        scored = sorted(((support_score(text, documents[i]), i) for i in range(len(documents))), reverse=True)
-        claimed_scored = sorted(((support_score(text, documents[i]), i) for i in valid_claims), reverse=True)
+        all_scores = support_scores(text, documents)
+        scored = sorted(((all_scores[i], i) for i in range(len(documents))), reverse=True)
+        claimed_scored = sorted(((all_scores[i], i) for i in valid_claims), reverse=True)
 
         if claimed_scored and claimed_scored[0][0] >= SUPPORT_THRESHOLD:
             score, top = claimed_scored[0]

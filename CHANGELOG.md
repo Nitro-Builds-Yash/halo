@@ -2,6 +2,20 @@
 
 All notable changes to halo are documented here. Each version's section becomes its GitHub release notes.
 
+## [2.5.0] - 2026-11-26
+
+A built-in web app, more Rust, and a cleaner layout.
+
+#### Added
+- **Web app** served by the API at `/` (no build step): chat with follow-ups, live pipeline steps, a confidence ring, sentence highlighting linked to evidence, clickable citations at the right PDF page, drag-and-drop uploads, document management, light and dark themes, and API-key settings.
+- **More Rust in `halo-native` 0.2.0:** sentence-evidence scoring (`content_words`, `support_scores`, parallel) and Reciprocal Rank Fusion. Both produce the same output as Python, checked in CI.
+- **`haloctl`:** a native Rust command-line client (`crates/halo-cli`) with `ask` (streams pipeline steps and evidence), `chat`, `upload`, `docs` and `health`. CI runs it against a real container.
+
+#### Changed
+- **Layout:** Rust lives in a `crates/` workspace (`halo-native`, `halo-cli`). Docker files moved to `deploy/`, and the benchmark to `evals/perf/`.
+- **Restyled Streamlit app and `halo` CLI:** evidence per sentence, a confidence bar, and a cleaner header.
+- **Docker:** run `docker compose -f deploy/docker-compose.yml up --build`. The Render blueprint points at `deploy/Dockerfile`.
+
 ## [2.4.0] - 2026-11-26
 
 Native Rust keyword search.

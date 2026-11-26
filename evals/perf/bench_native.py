@@ -1,7 +1,7 @@
 """Compare the Rust BM25 backend with the pure-Python one on a synthetic corpus.
 
-    pip install ./rust            # build the extension (needs a Rust toolchain)
-    python benchmarks/bm25_bench.py --docs 20000 --queries 200
+    pip install ./crates/halo-native            # build the extension (needs a Rust toolchain)
+    python evals/perf/bench_native.py --docs 20000 --queries 200
 
 Reports index build time, per-query latency and tokenization throughput for each backend.
 """
@@ -75,7 +75,7 @@ def main():
                           halo_native.Bm25Index,
                           lambda ix, c, q: ix.top_k(halo_native.tokenize(q), 8), docs, queries))
     except ImportError:
-        print("halo_native not installed: pip install ./rust")
+        print("halo_native not installed: pip install ./crates/halo-native")
 
     try:
         from rank_bm25 import BM25Plus
@@ -83,6 +83,8 @@ def main():
         rows.append(bench("python (rank-bm25)", *python_backend(BM25Plus), docs, queries))
     except ImportError:
         print("rank-bm25 not installed: pip install rank-bm25")
+
+    evidence = bench_evidence(docs[:2000])
 
     print(f"\n{args.docs:,} documents, {len(queries)} queries\n")
     print(f"{'backend':32} {'tokenize':>10} {'build':>10} {'query p50':>11} {'query p95':>11}")
@@ -94,6 +96,38 @@ def main():
         print(f"\nspeed-up: build {py['build_s'] / rust['build_s']:.1f}x, "
               f"query p50 {py['query_ms_p50'] / rust['query_ms_p50']:.1f}x, "
               f"tokenize {py['tokenize_s'] / rust['tokenize_s']:.1f}x")
+    if "rust" in evidence:
+        print(f"\nevidence scoring (1 sentence vs 2,000 passages): rust {evidence['rust']:.2f} ms, "
+              f"python {evidence['python']:.2f} ms ({evidence['python'] / evidence['rust']:.1f}x)")
+
+
+def bench_evidence(passages, sentences=200):
+    """Sentence-evidence scoring: one sentence against every passage, as attribution does."""
+    import random as _r
+
+    rnd = _r.Random(1)
+    sents = [" ".join(rnd.choice(p.split()) for _ in range(12)) for p in rnd.sample(passages, sentences)]
+    out = {}
+    try:
+        import halo_native
+
+        t = time.perf_counter()
+        for s in sents:
+            halo_native.support_scores(s, passages)
+        out["rust"] = (time.perf_counter() - t) / sentences * 1000
+    except ImportError:
+        pass
+    pat = re.compile(r"[a-z0-9]+(?:[.%][0-9]+)?%?")
+
+    def words(t):
+        return {w for w in pat.findall(t.lower()) if len(w) > 2 or w.isdigit()}
+
+    t = time.perf_counter()
+    for s in sents:
+        sw = words(s)
+        [len(sw & words(p)) / len(sw) for p in passages]
+    out["python"] = (time.perf_counter() - t) / sentences * 1000
+    return out
 
 
 if __name__ == "__main__":

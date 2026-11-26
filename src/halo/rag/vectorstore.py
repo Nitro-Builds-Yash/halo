@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 from halo.core.config import settings
 from halo.core.llm import get_embeddings
 from halo.core.log import get_logger
-from halo.rag.bm25 import BM25Index
+from halo.rag.bm25 import BM25Index, native
 from halo.rag.reranker import CrossEncoderReranker
 
 logger = get_logger(__name__)
@@ -59,6 +59,18 @@ def get_hybrid_retriever() -> "HybridRetriever":
     return _hybrid
 
 
+def rrf_fuse(rankings: List[List[str]], k: float = 60) -> List[tuple]:
+    """Reciprocal Rank Fusion: score(key) = sum of 1 / (k + rank + 1) over the ranked lists.
+    Best first; ties keep first-seen order. Runs in Rust when halo-native is installed."""
+    if native:
+        return native.rrf_fuse(rankings, float(k))
+    scores: Dict[str, float] = {}
+    for keys in rankings:
+        for rank, key in enumerate(keys):
+            scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank + 1)
+    return sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+
+
 class HybridRetriever:
     """Dense (Chroma) + sparse (BM25) retrieval fused with Reciprocal Rank Fusion,
     then reranked with a cross-encoder. Results are fused on stable chunk IDs."""
@@ -90,17 +102,17 @@ class HybridRetriever:
         dense = self._dense(query, top_k * 2)
         sparse = self.bm25.search(query, top_k=top_k * 2)
 
-        rrf: Dict[str, float] = {}
         lookup: Dict[str, Dict[str, Any]] = {}
+        rankings = []
         for results in (dense, sparse):
-            for rank, item in enumerate(results):
+            keys = []
+            for item in results:
                 key = self._key(item)
-                rrf[key] = rrf.get(key, 0.0) + 1.0 / (self.rrf_k + rank + 1)
                 lookup.setdefault(key, item)
+                keys.append(key)
+            rankings.append(keys)
 
-        fused = []
-        for key, score in sorted(rrf.items(), key=lambda kv: kv[1], reverse=True):
-            fused.append({**lookup[key], "rrf_score": score})
+        fused = [{**lookup[key], "rrf_score": score} for key, score in rrf_fuse(rankings, self.rrf_k)]
 
         if use_rerank and fused:
             return self.reranker.rerank(query, fused, top_k=top_k)
