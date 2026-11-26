@@ -23,3 +23,37 @@ jobs:
         run: ruff check .
       - name: Test
         run: pytest -q
+
+  native:
+    name: rust extension
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ""
+      CHROMA_PERSIST_DIR: /tmp/halo_chroma
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Rust checks
+        working-directory: rust
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+      - name: Build and install halo-native
+        run: |
+          pip install -e ".[dev]" maturin
+          pip install ./rust
+          python -c "import halo_native; print('halo_native', halo_native.__version__)"
+      - name: Test with the Rust backend (incl. parity vs rank-bm25)
+        run: pytest -q
+      - name: Benchmark (Rust vs pure Python)
+        run: python benchmarks/bm25_bench.py --docs 20000 --queries 200

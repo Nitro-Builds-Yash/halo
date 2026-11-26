@@ -1,0 +1,24 @@
+[package]
+name = "halo-native"
+version = "0.1.0"
+edition = "2021"
+description = "Native (Rust) BM25 index and tokenizer for halo"
+license = "MIT"
+publish = false
+
+[lib]
+name = "halo_native"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.23", features = ["abi3-py311"] }
+rayon = "1.10"
+
+[features]
+default = []
+extension-module = ["pyo3/extension-module"]
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3

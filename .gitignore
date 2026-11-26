@@ -15,3 +15,6 @@ evals/dataset.jsonl
 *.log
 .vscode/
 .idea/
+
+# Rust build output
+rust/target/
