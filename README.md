@@ -9,6 +9,7 @@
   <img alt="LangGraph" src="https://img.shields.io/badge/LangGraph-CRAG-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-API-009688?style=for-the-badge&logo=fastapi&logoColor=white">
   <img alt="Streamlit" src="https://img.shields.io/badge/Streamlit-UI-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white">
+  <img alt="Rust" src="https://img.shields.io/badge/Rust-native%20BM25-B7410E?style=for-the-badge&logo=rust&logoColor=white">
   <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white">
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-8B949E?style=for-the-badge"></a>
 </p>
@@ -138,6 +139,21 @@ LANGSMITH_PROJECT=halo
 ```
 
 Each question becomes one trace named `halo`, tagged by where it came from (`api`, `stream`, `cli`, `ui`), with every graph node, LLM call, latency and token count.
+</details>
+
+<details>
+<summary><b>🦀 Speed up keyword search with Rust</b></summary>
+<br>
+
+Halo's BM25 keyword index and tokenizer are also written in Rust ([`rust/`](./rust), via PyO3). Install the extension and Halo uses it automatically:
+
+```bash
+pip install maturin
+pip install ./rust          # needs a Rust toolchain: https://rustup.rs
+halo --version              # … keyword search: rust (halo-native 0.1.0)
+```
+
+The Rust index stores term frequencies as posting lists and only touches documents that contain a query term, and it releases Python's GIL while it works. It gives exactly the same scores and ranking as the pure-Python backend, which CI checks on every change. Set `HALO_NATIVE=0` to switch back to Python.
 </details>
 
 <details>
@@ -308,6 +324,8 @@ halo/
 │   ├── tools/           # web search
 │   ├── ui/app.py        # Streamlit app
 │   └── cli.py           # the `halo` command
+├── rust/                # halo-native: BM25 index + tokenizer in Rust (PyO3, optional)
+├── benchmarks/          # Rust vs Python BM25 benchmark
 ├── evals/               # RAGAS evaluation harness
 ├── tests/               # offline test suite (LLMs and search mocked)
 ├── docs/                # images and interview notes

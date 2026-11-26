@@ -20,6 +20,7 @@ from halo.core.config import settings
 from halo.core.log import get_logger
 from halo.core.semantic_cache import SemanticCache
 from halo.core.tracing import run_config, tracing_enabled
+from halo.rag.bm25 import backend_name as keyword_backend
 from halo.rag.ingest import SUPPORTED_EXTENSIONS, delete_source, ingest_file_list, list_sources
 
 logger = get_logger(__name__)
@@ -84,6 +85,7 @@ def health():
         "version": VERSION,
         "auth_required": bool(settings.API_KEY),
         "tracing": tracing_enabled(),
+        "keyword_backend": keyword_backend(),
         "features": [
             "semantic_cache_entrypoint",
             "hybrid_bm25_dense_rrf",

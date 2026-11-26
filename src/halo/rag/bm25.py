@@ -5,11 +5,41 @@ import re
 import threading
 from typing import Any, Dict, List, Optional
 
-from rank_bm25 import BM25Plus
-
 from halo.core.log import get_logger
 
 logger = get_logger(__name__)
+
+_TOKEN_SPLIT = re.compile(r"[^\w\s]")
+
+
+def _load_native():
+    """The Rust extension (`pip install ./rust`), unless disabled with HALO_NATIVE=0."""
+    if os.environ.get("HALO_NATIVE", "1").lower() in ("0", "false", "no"):
+        return None
+    try:
+        import halo_native
+    except ImportError:
+        return None
+    return halo_native
+
+
+native = _load_native()
+
+
+def backend_name() -> str:
+    return f"rust (halo-native {native.__version__})" if native else "python (rank-bm25)"
+
+
+def tokenize(text: str) -> List[str]:
+    if native:
+        return native.tokenize(text)
+    return _TOKEN_SPLIT.sub(" ", text.lower()).split()
+
+
+def tokenize_many(texts: List[str]) -> List[List[str]]:
+    if native:
+        return native.tokenize_many(list(texts))
+    return [tokenize(t) for t in texts]
 
 
 def content_id(text: str) -> str:
@@ -21,6 +51,9 @@ class BM25Index:
 
     Chunks carry the same `chunk_id` as in Chroma so dense and sparse results can be
     fused by ID. BM25Plus avoids negative/zero IDF on small corpora.
+
+    Scoring runs in Rust when the optional `halo_native` extension is installed, and in
+    pure Python (rank-bm25) otherwise; both give the same scores and the same ranking.
     """
 
     def __init__(self, persist_path: str = "./chroma_db/bm25_index.json"):
@@ -29,17 +62,24 @@ class BM25Index:
         self.documents: List[str] = []
         self.metadatas: List[Dict[str, Any]] = []
         self.corpus_tokens: List[List[str]] = []
-        self.bm25: Optional[BM25Plus] = None
+        self.bm25 = None
         self._lock = threading.RLock()
         self._mtime: Optional[float] = None
         self._load()
 
     @staticmethod
     def _tokenize(text: str) -> List[str]:
-        return re.sub(r"[^\w\s]", " ", text.lower()).split()
+        return tokenize(text)
 
     def _rebuild(self):
-        self.bm25 = BM25Plus(self.corpus_tokens) if self.corpus_tokens else None
+        if not self.corpus_tokens:
+            self.bm25 = None
+        elif native:
+            self.bm25 = native.Bm25Index(self.corpus_tokens)
+        else:
+            from rank_bm25 import BM25Plus
+
+            self.bm25 = BM25Plus(self.corpus_tokens)
 
     def _file_mtime(self) -> Optional[float]:
         try:
@@ -115,19 +155,23 @@ class BM25Index:
             tokens = self._tokenize(query)
             if not tokens:
                 return []
-            scores = self.bm25.get_scores(tokens)
-            query_set = set(tokens)
-            results = []
-            for idx in sorted(range(len(scores)), key=lambda i: scores[i], reverse=True):
-                if query_set.intersection(self.corpus_tokens[idx]):
-                    results.append({
-                        "id": self.ids[idx],
-                        "content": self.documents[idx],
-                        "metadata": self.metadatas[idx],
-                        "score": float(scores[idx]),
-                    })
-                if len(results) >= top_k:
-                    break
+            if native:
+                ranked = self.bm25.top_k(tokens, top_k)
+            else:
+                scores = self.bm25.get_scores(tokens)
+                query_set = set(tokens)
+                ranked = []
+                for idx in sorted(range(len(scores)), key=lambda i: scores[i], reverse=True):
+                    if query_set.intersection(self.corpus_tokens[idx]):
+                        ranked.append((idx, scores[idx]))
+                    if len(ranked) >= top_k:
+                        break
+            results = [{
+                "id": self.ids[idx],
+                "content": self.documents[idx],
+                "metadata": self.metadatas[idx],
+                "score": float(score),
+            } for idx, score in ranked]
             return results
 
     def _save(self):
@@ -150,7 +194,7 @@ class BM25Index:
             # Older index files have no ids: derive them from the content.
             self.ids = data.get("ids") or [m.get("chunk_id") or content_id(d)
                                            for d, m in zip(self.documents, self.metadatas)]
-            self.corpus_tokens = [self._tokenize(d) for d in self.documents]
+            self.corpus_tokens = tokenize_many(self.documents)
             self._rebuild()
             self._mtime = self._file_mtime()
         except Exception:

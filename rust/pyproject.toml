@@ -1,0 +1,14 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "halo-native"
+version = "0.1.0"
+description = "Native (Rust) BM25 index and tokenizer for halo. Optional: halo falls back to pure Python without it."
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+[tool.maturin]
+features = ["extension-module"]
+module-name = "halo_native"
