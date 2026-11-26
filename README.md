@@ -116,7 +116,7 @@ docker compose up --build
 | API + interactive docs | http://localhost:8000/docs |
 | Streamlit app | http://localhost:8501 |
 
-The API and app share one Chroma server, so documents uploaded in either show up in both. Build a smaller image without torch with `docker compose build --build-arg RERANK=0`.
+The API and app share one Chroma server, so documents uploaded in either show up in both. The image includes the Rust keyword-search extension, compiled in a separate build stage. Build a smaller image without torch with `docker compose build --build-arg RERANK=0`, or skip the Rust step with `--build-arg NATIVE=0`.
 </details>
 
 <details>

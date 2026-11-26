@@ -57,3 +57,31 @@ jobs:
         run: pytest -q
       - name: Benchmark (Rust vs pure Python)
         run: python benchmarks/bm25_bench.py --docs 20000 --queries 200
+
+  docker:
+    name: docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (Rust extension on, torch off)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: halo:ci
+          build-args: |
+            RERANK=0
+            NATIVE=1
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Start the API and check it uses the Rust backend
+        run: |
+          docker run -d --name halo -p 8000:8000 -e OPENAI_API_KEY= halo:ci
+          for i in $(seq 1 30); do curl -fs localhost:8000/health && break; sleep 2; done
+          curl -fs localhost:8000/health | tee health.json
+          grep -q '"keyword_backend":"rust' health.json
+          docker exec halo halo --version
+      - name: Logs on failure
+        if: failure()
+        run: docker logs halo || true
