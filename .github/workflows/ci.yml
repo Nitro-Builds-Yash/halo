@@ -92,11 +92,13 @@ jobs:
           cargo build --release -p halo-cli --manifest-path crates/Cargo.toml
           HALOCTL=crates/target/release/haloctl
           $HALOCTL health
+          $HALOCTL docs
+          $HALOCTL --json health | grep -q '"keyword_backend":"rust'
+          # No OpenAI key in CI: indexing needs embeddings, so upload must fail with a clear error, not hang or crash
           printf 'Refunds are accepted within 30 days of purchase.\n' > policy.txt
-          $HALOCTL upload policy.txt
-          $HALOCTL docs | tee docs.txt
-          grep -q policy.txt docs.txt
-          $HALOCTL docs rm policy.txt
+          if $HALOCTL upload policy.txt 2> err.txt; then echo "upload unexpectedly succeeded"; exit 1; fi
+          cat err.txt
+          grep -q "Failed to ingest files" err.txt
       - name: Logs on failure
         if: failure()
         run: docker logs halo || true
