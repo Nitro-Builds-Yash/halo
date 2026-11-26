@@ -36,24 +36,31 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME does not match package version $VERSION"; exit 1
           fi
 
-      - name: Stop if this version is already released
+      - name: Check whether this version is already released
+        id: exists
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
-            echo "::error::Release ${{ steps.version.outputs.tag }} already exists. Bump __version__ first."; exit 1
+            echo "already=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release ${{ steps.version.outputs.tag }} already exists, so it is left unchanged. Bump __version__ in src/halo/__init__.py to publish a new one. The Docker image is still republished."
+          else
+            echo "already=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Test
+        if: steps.exists.outputs.already != 'true'
         run: |
           pip install -e ".[dev]" build
           ruff check .
           pytest -q
 
       - name: Build wheel and sdist
+        if: steps.exists.outputs.already != 'true'
         run: python -m build
 
       - name: Release notes from CHANGELOG.md
+        if: steps.exists.outputs.already != 'true'
         run: |
           awk -v v="${{ steps.version.outputs.version }}" '
             $0 ~ "^## \\[?v?" v "[]  ]" || $0 == "## " v || $0 == "## v" v { found=1; next }
@@ -64,6 +71,7 @@ jobs:
           cat notes.md
 
       - name: Publish release
+        if: steps.exists.outputs.already != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
