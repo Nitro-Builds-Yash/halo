@@ -233,9 +233,15 @@ def cmd_ui(args):
 
 # ---------------------------------------------------------------- entry point
 
+def _backend() -> str:
+    from halo.rag.bm25 import backend_name
+
+    return backend_name()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="halo", description="Corrective RAG with verified, cited answers.")
-    parser.add_argument("--version", action="version", version=f"halo {__version__}")
+    parser.add_argument("--version", action="version", version=f"halo {__version__} · keyword search: {_backend()}")
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("chat", help="interactive chat (default)").set_defaults(func=cmd_chat)

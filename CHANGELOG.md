@@ -2,6 +2,23 @@
 
 All notable changes to halo are documented here. Each version's section becomes its GitHub release notes.
 
+## [2.4.0] - 2026-11-26
+
+Native Rust keyword search.
+
+#### Added
+- **`halo-native`**: an optional Rust extension (PyO3) with Halo's BM25Plus index and tokenizer. Install it with `pip install ./rust` and Halo uses it automatically. Without it, Halo uses the pure-Python backend as before.
+- The Rust index uses posting lists, so a query only touches documents that contain its terms. It tokenizes in parallel, releases the GIL during builds and searches, and gives the same scores and ranking as `rank-bm25` (checked in CI against both a reference port and `rank-bm25` itself, including Unicode tokenization).
+- `HALO_NATIVE=0` turns the Rust backend off. `/health` and `halo --version` show which backend is active.
+- `benchmarks/bm25_bench.py` compares the two backends. On a 20,000-document corpus in CI, the median query time fell from 26.3 ms to 0.43 ms (about 60×); index builds were about 1.2× faster. A new CI job runs `cargo fmt`, `clippy`, `cargo test`, the full test suite on the Rust backend, and the benchmark.
+
+#### Install
+
+```bash
+pip install "halo @ git+https://github.com/Nitro-Builds-Yash/halo@v2.4.0"
+pip install maturin && pip install "git+https://github.com/Nitro-Builds-Yash/halo@v2.4.0#subdirectory=rust"   # optional
+```
+
 ## [2.3.0] - 2026-11-26
 
 Sentence-level citations.
