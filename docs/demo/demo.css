@@ -1,0 +1,5 @@
+.demo-ribbon { position: fixed; top: 0; left: 0; right: 0; z-index: 60; text-align: center; font-size: 12.5px;
+  padding: 6px 12px; color: #fff; background: linear-gradient(135deg, #4f5bd5, #7c4dff); }
+.demo-ribbon a { color: #fff; font-weight: 600; text-decoration: underline; }
+body { padding-top: 30px; }
+.app { height: calc(100vh - 30px); }
