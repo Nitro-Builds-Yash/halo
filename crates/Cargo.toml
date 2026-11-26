@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["halo-native", "halo-cli"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+authors = ["Athota Yashwanth"]
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+strip = true

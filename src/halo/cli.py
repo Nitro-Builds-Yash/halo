@@ -78,39 +78,58 @@ def _run(question: str, history: list | None = None) -> dict:
     return result
 
 
+def _bar(confidence: float) -> str:
+    c = max(0.0, min(1.0, confidence))
+    color = "green" if c >= 0.8 else "yellow" if c >= 0.5 else "red"
+    filled = round(c * 20)
+    return f"[{color}]{'█' * filled}[/{color}][dim]{'░' * (20 - filled)}[/dim] {int(c * 100)}%"
+
+
 def _print_result(result: dict):
-    confidence = result["confidence"]
-    color = "green" if confidence >= 0.8 else "yellow" if confidence >= 0.5 else "red"
-    label = "Partial answer (unverified)" if result["is_fallback"] else "Verified answer"
+    fallback = result["is_fallback"]
+    head = "[yellow]◆ Partial answer · not verified[/yellow]" if fallback else "[green]◆ Verified answer[/green]"
+    if result.get("cached"):
+        head += " [cyan]· cached[/cyan]"
     console.print()
     console.print(Panel(
         Markdown(result["generation"] or "No answer produced."),
-        title=f"[bold]{label}[/bold] [{color}]{int(confidence * 100)}% confidence[/{color}]",
-        border_style="yellow" if result["is_fallback"] else "green",
+        title=f"[bold]{head}[/bold]", title_align="left",
+        subtitle=_bar(result["confidence"]), subtitle_align="right",
+        border_style="yellow" if fallback else "green", padding=(1, 2),
     ))
 
+    sentences = [s for s in result.get("sentences", []) if s.get("supported") is not None]
+    if sentences:
+        bad = sum(1 for s in sentences if not s["supported"])
+        summary = (f"[yellow]{bad} of {len(sentences)} sentences not found in the sources[/yellow]" if bad
+                   else "[green]every sentence supported by the sources[/green]")
+        console.print(f"  [bold]Evidence[/bold]  {summary}")
+        for s in sentences:
+            mark = "[green]✓[/green]" if s["supported"] else "[yellow]![/yellow]"
+            console.print(f"  {mark} {escape(s['text'])}")
+            src = (s.get("sources") or [None])[0]
+            if src:
+                page = f" p.{src['page']}" if src.get("page") is not None else ""
+                console.print(f"    [dim]{escape(str(src['source']))}{page}: “{escape(str(src.get('snippet', '')))}”[/dim]")
+        console.print()
+
     if result["citations"]:
-        table = Table(title="Sources", header_style="bold magenta", show_lines=False)
+        table = Table(box=None, show_header=True, header_style="bold magenta", pad_edge=False, padding=(0, 2))
+        table.add_column("#", style="magenta", justify="right")
         table.add_column("Source", style="cyan")
         table.add_column("Page", justify="center")
-        table.add_column("Evidence", style="dim")
-        for c in result["citations"]:
-            table.add_row(escape(str(c.get("source"))), str(c.get("page") or "–"), escape(str(c.get("snippet", ""))))
+        table.add_column("Quote", style="dim", overflow="fold")
+        for i, c in enumerate(result["citations"], 1):
+            table.add_row(str(i), escape(str(c.get("source"))), str(c.get("page") or "–"), escape(str(c.get("snippet", ""))))
         console.print(table)
 
-    unsupported = [s for s in result.get("sentences", []) if s.get("supported") is False]
-    if unsupported:
-        console.print(f"[yellow]⚠ {len(unsupported)} sentence(s) not found in the sources:[/yellow]")
-        for s in unsupported:
-            console.print(f"  [yellow]•[/yellow] [dim]{escape(s['text'])}[/dim]")
-
     meta = [
-        f"chunks {len(result['documents'])}",
-        f"web search {'yes' if result['web_search_used'] else 'no'}",
-        f"retries {result['retry_count']}",
-        "cached" if result.get("cached") else settings.LLM_MODEL,
+        f"{len(result['documents'])} chunks",
+        "web search" if result["web_search_used"] else "local docs only",
+        f"{result['retry_count']} retries",
+        settings.LLM_MODEL,
     ]
-    console.print(f"[dim]{' · '.join(meta)}[/dim]\n")
+    console.print(f"  [dim]{' · '.join(meta)}[/dim]\n")
 
 
 def _ask(question: str, history: list | None = None) -> dict | None:
@@ -129,12 +148,10 @@ def _warn_if_unconfigured():
 
 
 def cmd_chat(_args):
-    console.print(Panel.fit(
-        f"[bold cyan]halo[/bold cyan] [dim]v{__version__}[/dim]  ask anything. retrieve truth.\n"
-        "[dim]Hybrid retrieval · cross-encoder gate · verified answers with citations[/dim]\n"
-        "[dim]Ask follow-ups naturally. 'new' starts a fresh conversation, 'exit' quits.[/dim]",
-        border_style="cyan",
-    ))
+    console.print()
+    console.print(f"  [bold magenta]◎[/bold magenta] [bold]halo[/bold] [dim]v{__version__} · {_backend()}[/dim]")
+    console.print("  [dim]Answers from your documents, every sentence checked against its source.[/dim]")
+    console.print("  [dim]Follow-ups work · [/dim][cyan]new[/cyan][dim] resets · [/dim][cyan]exit[/cyan][dim] quits[/dim]\n")
     _warn_if_unconfigured()
     history: list = []
     while True:

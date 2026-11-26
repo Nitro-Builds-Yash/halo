@@ -41,22 +41,22 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust
+          workspaces: crates
       - name: Rust checks
-        working-directory: rust
+        working-directory: crates
         run: |
-          cargo fmt --check
-          cargo clippy --all-targets -- -D warnings
-          cargo test
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
       - name: Build and install halo-native
         run: |
           pip install -e ".[dev]" maturin
-          pip install ./rust
+          pip install ./crates/halo-native
           python -c "import halo_native; print('halo_native', halo_native.__version__)"
       - name: Test with the Rust backend (incl. parity vs rank-bm25)
         run: pytest -q
       - name: Benchmark (Rust vs pure Python)
-        run: python benchmarks/bm25_bench.py --docs 20000 --queries 200
+        run: python evals/perf/bench_native.py --docs 20000 --queries 200
 
   docker:
     name: docker image
@@ -68,6 +68,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: deploy/Dockerfile
           load: true
           tags: halo:ci
           build-args: |
@@ -82,6 +83,20 @@ jobs:
           curl -fs localhost:8000/health | tee health.json
           grep -q '"keyword_backend":"rust' health.json
           docker exec halo halo --version
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+      - name: haloctl against the running container
+        run: |
+          cargo build --release -p halo-cli --manifest-path crates/Cargo.toml
+          HALOCTL=crates/target/release/haloctl
+          $HALOCTL health
+          printf 'Refunds are accepted within 30 days of purchase.\n' > policy.txt
+          $HALOCTL upload policy.txt
+          $HALOCTL docs | tee docs.txt
+          grep -q policy.txt docs.txt
+          $HALOCTL docs rm policy.txt
       - name: Logs on failure
         if: failure()
         run: docker logs halo || true

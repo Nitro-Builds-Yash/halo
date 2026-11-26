@@ -144,3 +144,11 @@ def test_api_key_query_param_for_links(client, monkeypatch, tmp_path):
     (tmp_path / "a.txt").write_text("hi")
     assert client.get("/api/v1/documents/a.txt/file").status_code == 401
     assert client.get("/api/v1/documents/a.txt/file?api_key=secret").status_code == 200
+
+
+def test_web_app_is_served(client):
+    page = client.get("/")
+    assert page.status_code == 200 and "text/html" in page.headers["content-type"]
+    assert "/static/app.js" in page.text
+    assert client.get("/static/app.js").status_code == 200
+    assert client.get("/static/styles.css").status_code == 200

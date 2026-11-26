@@ -1,6 +1,6 @@
 """The Rust backend must behave exactly like the pure-Python one.
 
-Skipped unless the extension is installed (`pip install ./rust`); CI builds it in a separate job.
+Skipped unless the extension is installed (`pip install ./crates/halo-native`); CI builds it in a separate job.
 """
 import math
 import random
@@ -111,3 +111,62 @@ def test_can_be_disabled(monkeypatch):
     assert bm25_module._load_native() is None
     monkeypatch.setenv("HALO_NATIVE", "1")
     assert bm25_module._load_native() is halo_native
+
+
+# ---- sentence-evidence scoring and rank fusion -------------------------------------------
+
+EVIDENCE_TEXTS = TEXTS + [
+    "Refunds are accepted within 30 days; a 2.5% fee applies to 50% of orders (v2.3.0).",
+    "The quick brown fox jumps over the lazy dog 1.2.3 times", "İstanbul CAFÉ 100%% off", "ab 12 cd 3",
+]
+
+
+def py_content_words(text):
+    from halo.agents import attribution
+
+    return [w for w in attribution._WORD.findall(text.lower())
+            if w not in attribution._STOPWORDS and (len(w) > 2 or w.isdigit())]
+
+
+@pytest.mark.parametrize("text", EVIDENCE_TEXTS)
+def test_content_words_match_python(text):
+    assert halo_native.content_words(text) == py_content_words(text)
+
+
+def test_support_scores_match_python():
+    rnd = random.Random(3)
+    vocab = ["refund", "days", "30", "45", "2.5%", "policy", "the", "shipping", "café", "orders", "fee"]
+    for _ in range(300):
+        sentence = " ".join(rnd.choices(vocab, k=rnd.randint(0, 8)))
+        passages = [" ".join(rnd.choices(vocab, k=rnd.randint(0, 20))) for _ in range(5)]
+        sw = set(py_content_words(sentence))
+        expected = [len(sw & set(py_content_words(p))) / len(sw) if sw else 0.0 for p in passages]
+        assert halo_native.support_scores(sentence, passages) == expected
+        assert [halo_native.support_score(sentence, p) for p in passages] == expected
+
+
+def test_rrf_matches_python(monkeypatch):
+    from halo.rag import vectorstore
+
+    rnd = random.Random(5)
+    for _ in range(50):
+        rankings = [rnd.sample([f"c{i}" for i in range(30)], rnd.randint(0, 12)) for _ in range(rnd.randint(0, 3))]
+        monkeypatch.setattr(vectorstore, "native", None)
+        expected = vectorstore.rrf_fuse(rankings, 60)
+        monkeypatch.setattr(vectorstore, "native", halo_native)
+        assert vectorstore.rrf_fuse(rankings, 60) == expected
+
+
+def test_attribution_identical_across_backends(monkeypatch):
+    from halo.agents import attribution
+
+    docs = ["Refunds are accepted within 30 days of purchase. A receipt is required.",
+            "International orders can be returned within 45 days of delivery.",
+            "Gift cards cannot be exchanged for cash."]
+    metas = [{"source": "a.pdf", "page": 1}, {"source": "a.pdf", "page": 2}, {"source": "b.md", "page": 1}]
+    answer = ("Refunds are accepted within 30 days of purchase. International orders get 60 days. "
+              "Gift cards cannot be exchanged for cash.")
+    monkeypatch.setattr(attribution, "native", None)
+    expected = attribution.attribute(answer, None, docs, metas)
+    monkeypatch.setattr(attribution, "native", halo_native)
+    assert attribution.attribute(answer, None, docs, metas) == expected

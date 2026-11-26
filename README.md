@@ -9,7 +9,7 @@
   <img alt="LangGraph" src="https://img.shields.io/badge/LangGraph-CRAG-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-API-009688?style=for-the-badge&logo=fastapi&logoColor=white">
   <img alt="Streamlit" src="https://img.shields.io/badge/Streamlit-UI-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white">
-  <img alt="Rust" src="https://img.shields.io/badge/Rust-native%20BM25-B7410E?style=for-the-badge&logo=rust&logoColor=white">
+  <img alt="Rust" src="https://img.shields.io/badge/Rust-native%20core-B7410E?style=for-the-badge&logo=rust&logoColor=white">
   <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white">
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-8B949E?style=for-the-badge"></a>
 </p>
@@ -18,6 +18,7 @@
   <a href="#-quickstart"><b>Quickstart</b></a> ·
   <a href="#-how-it-works"><b>How it works</b></a> ·
   <a href="#%EF%B8%8F-usage"><b>Usage</b></a> ·
+  <a href="#-rust-inside"><b>Rust</b></a> ·
   <a href="#-api"><b>API</b></a> ·
   <a href="#%EF%B8%8F-configuration"><b>Configuration</b></a> ·
   <a href="#-evaluation"><b>Evaluation</b></a> ·
@@ -29,6 +30,11 @@
 **Halo** answers questions about your PDFs, text and Markdown files, and **checks every answer against its sources before returning it**. It finds evidence with hybrid search, filters it with a cross-encoder, searches the web when your documents fall short, and cites where each fact came from. If it still can't verify an answer, it says so and shows you the best evidence instead of guessing.
 
 <br>
+
+<p align="center">
+  <img src="./docs/assets/web-app.png" width="100%" alt="The halo web app: a verified answer with a confidence ring, each sentence linked to its source passage, and an unsupported sentence flagged">
+  <br><sub>The built-in web app: every sentence is checked against its source; the last one isn't in the documents, so it's flagged.</sub>
+</p>
 
 ## ✨ Features
 
@@ -81,25 +87,30 @@
 
 ```bash
 git clone https://github.com/Nitro-Builds-Yash/halo && cd halo
-pip install -e ".[ui]"            # add ,rerank for the cross-encoder (installs torch)
-cp .env.example .env              # then set OPENAI_API_KEY
+pip install -e ".[ui]"                  # add ,rerank for the cross-encoder (installs torch)
+pip install ./crates/halo-native        # optional: Rust speed-ups (needs https://rustup.rs + `pip install maturin`)
+cp .env.example .env                    # then set OPENAI_API_KEY
 
-halo ingest ./my-docs             # index .pdf / .txt / .md files
-halo                              # start chatting
+halo ingest ./my-docs                   # index .pdf / .txt / .md files
+halo serve                              # web app → http://localhost:8000
 ```
 
+Prefer the terminal? Run `halo` for an interactive chat:
+
 ```text
+  ◎ halo v2.5.0 · rust (halo-native 0.2.0)
+
 halo › What is the refund window?
-🔍 Hybrid retrieval  Chroma + BM25 → RRF → cross-encoder
-⚖️  Relevance gate   per-chunk scores + batched LLM grading
-✍️  Answer synthesis citations + confidence
-🧪 Verification: useful
-╭─────────────── Verified answer  92% confidence ───────────────╮
-│ Refunds are accepted within 30 days of purchase with the      │
-│ original receipt.                                             │
-╰───────────────────────────────────────────────────────────────╯
- Source        Page  Evidence
- policy.pdf    4     "returns are permitted within 30 days…"
+🔍 Hybrid retrieval  ⚖️  Relevance gate  ✍️  Answer synthesis  🧪 Verification: useful
+╭─ ◆ Verified answer ─────────────────────────────────────────────╮
+│                                                                 │
+│  Refunds are accepted within 30 days of purchase with the       │
+│  original receipt.                                              │
+│                                                                 │
+╰──────────────────────────────────────── ████████████████░░░░ 86% ╯
+  Evidence  every sentence supported by the sources
+  ✓ Refunds are accepted within 30 days of purchase with the original receipt.
+    policy.pdf p.4: "Refunds are accepted within 30 days of purchase…"
 ```
 
 <details>
@@ -108,15 +119,16 @@ halo › What is the refund window?
 
 ```bash
 cp .env.example .env              # add your keys
-docker compose up --build
+docker compose -f deploy/docker-compose.yml up --build
 ```
 
 | Service | URL |
 | --- | --- |
-| API + interactive docs | http://localhost:8000/docs |
+| Web app | http://localhost:8000 |
+| API docs | http://localhost:8000/docs |
 | Streamlit app | http://localhost:8501 |
 
-The API and app share one Chroma server, so documents uploaded in either show up in both. The image includes the Rust keyword-search extension, compiled in a separate build stage. Build a smaller image without torch with `docker compose build --build-arg RERANK=0`, or skip the Rust step with `--build-arg NATIVE=0`.
+The API and app share one Chroma server, so documents uploaded in either show up in both. The image includes the Rust keyword-search extension, compiled in a separate build stage. Build a smaller image without torch with `docker compose -f deploy/docker-compose.yml build --build-arg RERANK=0`, or skip the Rust step with `--build-arg NATIVE=0`.
 </details>
 
 <details>
@@ -139,30 +151,6 @@ LANGSMITH_PROJECT=halo
 ```
 
 Each question becomes one trace named `halo`, tagged by where it came from (`api`, `stream`, `cli`, `ui`), with every graph node, LLM call, latency and token count.
-</details>
-
-<details>
-<summary><b>🦀 Speed up keyword search with Rust</b></summary>
-<br>
-
-Halo's BM25 keyword index and tokenizer are also written in Rust ([`rust/`](./rust), via PyO3). Install the extension and Halo uses it automatically:
-
-```bash
-pip install maturin
-pip install ./rust          # needs a Rust toolchain: https://rustup.rs
-halo --version              # … keyword search: rust (halo-native 0.1.0)
-```
-
-The Rust index stores term frequencies as posting lists and only touches documents that contain a query term, and it releases Python's GIL while it works. It gives exactly the same scores and ranking as the pure-Python backend, which CI checks on every change. Set `HALO_NATIVE=0` to switch back to Python.
-
-Measured by [`benchmarks/bm25_bench.py`](./benchmarks/bm25_bench.py) in CI (GitHub Actions runner, synthetic 20,000-document corpus, 200 queries):
-
-| Backend | Tokenize | Build index | Query p50 | Query p95 |
-| --- | --- | --- | --- | --- |
-| Rust (halo-native) | 0.30 s | 0.35 s | **0.43 ms** | **0.84 ms** |
-| Python (rank-bm25) | 0.35 s | 0.41 s | 26.3 ms | 39.2 ms |
-
-Queries are about **60× faster**. Tokenizing and building gain little, because that time is mostly spent moving Python strings in and out.
 </details>
 
 <details>
@@ -217,7 +205,38 @@ flowchart LR
 ```
 </details>
 
+## 🦀 Rust inside
+
+Halo's hot paths are also written in Rust, in [`crates/`](./crates). Halo uses them automatically when they're installed and falls back to identical pure-Python code when they're not.
+
+| Crate | What it does |
+| --- | --- |
+| [`halo-native`](./crates/halo-native) | PyO3 extension: BM25Plus keyword index and tokenizer, sentence-evidence scoring, Reciprocal Rank Fusion. Releases the GIL and runs in parallel with rayon. |
+| [`halo-cli`](./crates/halo-cli) | `haloctl`, a fast native client for the API: streaming answers with evidence, uploads, document management. |
+
+```bash
+pip install maturin && pip install ./crates/halo-native   # the extension
+cargo install --path crates/halo-cli                     # the haloctl binary
+
+haloctl ask "What is the refund window?"   # or: haloctl chat · haloctl upload a.pdf · haloctl docs
+```
+
+Every change is checked in CI: the Rust and Python versions must give **identical** tokens, scores, rankings and evidence (including Unicode text), and `haloctl` is run against a real container.
+
+Measured by [`evals/perf/bench_native.py`](./evals/perf/bench_native.py) in CI (GitHub Actions runner, synthetic 20,000-document corpus, 200 queries):
+
+| Backend | Build index | Query p50 | Query p95 |
+| --- | --- | --- | --- |
+| Rust (halo-native) | 0.35 s | **0.43 ms** | **0.84 ms** |
+| Python (rank-bm25) | 0.41 s | 26.3 ms | 39.2 ms |
+
+Keyword queries are about **60× faster**. Set `HALO_NATIVE=0` to use the Python versions.
+
 ## 🖥️ Usage
+
+### Web app
+
+`halo serve` (or Docker) serves the web app at **http://localhost:8000**. You can chat with follow-ups, drag in documents, watch each pipeline step live, hover a sentence to see its source, and open citations at the right PDF page. It has light and dark themes.
 
 ### Command line
 
@@ -227,12 +246,13 @@ flowchart LR
 | `halo ask "question"` | Answer one question and exit |
 | `halo ingest ./docs a.pdf` | Index files and folders (`.pdf`, `.txt`, `.md`). Re-ingesting a file replaces it. |
 | `halo docs` / `halo docs rm a.pdf` | List indexed documents / remove one |
-| `halo serve [--reload]` | Start the API on port 8000 |
+| `halo serve [--reload]` | Start the API and web app on port 8000 |
 | `halo ui` | Start the Streamlit app on port 8501 |
+| `haloctl …` | The native Rust client: `ask`, `chat`, `upload`, `docs`, `health` |
 
-### Web app
+### Streamlit app
 
-`halo ui` opens a chat interface where you can upload and delete documents, watch each pipeline step as it runs, and expand the citations, confidence and agent trace for every answer.
+`halo ui` opens a Streamlit version of the chat where you can upload and delete documents, watch each pipeline step as it runs, and expand the citations, confidence and agent trace for every answer.
 
 ## 🔌 API
 
@@ -321,24 +341,23 @@ python -m evals.run_eval --dataset evals/dataset.jsonl # results → evals/resul
 
 ```text
 halo/
-├── src/halo/
-│   ├── agents/          # LangGraph pipeline
-│   │   ├── graph.py     #   graph wiring and routing
-│   │   ├── nodes/       #   decompose, retrieve, grade, rewrite, web search, generate, reflect, fallback
-│   │   ├── runner.py    #   run a question with the semantic cache in front
-│   │   └── state.py     #   shared graph state
-│   ├── rag/             # ingestion, Chroma + BM25 indexes, hybrid retriever, cross-encoder
-│   ├── api/             # FastAPI server and schemas
-│   ├── core/            # settings, model clients, semantic cache, logging
-│   ├── tools/           # web search
-│   ├── ui/app.py        # Streamlit app
-│   └── cli.py           # the `halo` command
-├── rust/                # halo-native: BM25 index + tokenizer in Rust (PyO3, optional)
-├── benchmarks/          # Rust vs Python BM25 benchmark
-├── evals/               # RAGAS evaluation harness
-├── tests/               # offline test suite (LLMs and search mocked)
-├── docs/                # images and interview notes
-├── Dockerfile · docker-compose.yml
+├── src/halo/                # the Python package
+│   ├── agents/              #   LangGraph pipeline: graph, nodes, attribution, conversation
+│   ├── rag/                 #   ingestion, Chroma + BM25 indexes, hybrid retriever, reranker
+│   ├── api/                 #   FastAPI server
+│   ├── web/                 #   web app served at / (HTML, CSS, JS, no build step)
+│   ├── ui/app.py            #   Streamlit app
+│   ├── core/                #   settings, model clients, cache, tracing, logging
+│   ├── tools/               #   web search
+│   └── cli.py               #   the `halo` command
+├── crates/                  # Rust workspace
+│   ├── halo-native/         #   PyO3 extension (BM25, tokenizer, evidence, RRF)
+│   └── halo-cli/            #   `haloctl` native client
+├── tests/                   # Python tests (LLMs and search mocked)
+├── evals/                   # RAGAS quality eval · perf/ Rust vs Python benchmark
+├── deploy/                  # Dockerfile, docker-compose.yml
+├── docs/                    # images and interview notes
+├── render.yaml              # one-click Render deploy
 └── pyproject.toml
 ```
 
@@ -367,6 +386,8 @@ Each release is listed on the [Releases page](https://github.com/Nitro-Builds-Ya
 - [x] Citations that link to the original document page
 - [x] LangSmith tracing and one-click Render deploy
 - [x] Sentence-level citations with unsupported sentences flagged
+- [x] Rust core: BM25, tokenizer, evidence scoring, rank fusion, `haloctl`
+- [x] Built-in web app
 - [ ] Table extraction and OCR for scanned PDFs
 
 ## 📄 License

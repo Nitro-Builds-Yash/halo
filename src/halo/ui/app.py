@@ -21,80 +21,48 @@ from halo.core.tracing import run_config
 from halo.rag.ingest import delete_source, ingest_file_list, list_sources
 
 st.set_page_config(
-    page_title="Halo — Production Agentic CRAG",
-    page_icon="🛡️",
+    page_title="halo · verified answers from your documents",
+    page_icon="◎",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
-# Custom modern CSS styling
+# Same visual language as the web app served at "/" (src/halo/web).
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
-    
-    html, body, [class*="css"] {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-    }
-    
-    .hero-container {
-        padding: 1.6rem 2rem;
-        background: linear-gradient(135deg, #090d16 0%, #111827 50%, #1e1b4b 100%);
-        border-radius: 14px;
-        color: #f8fafc;
-        margin-bottom: 1.5rem;
-        border: 1px solid #312e81;
-        box-shadow: 0 4px 20px -2px rgba(99, 102, 241, 0.15);
-    }
-    .hero-title {
-        font-size: 2.1rem;
-        font-weight: 700;
-        letter-spacing: -0.5px;
-        background: linear-gradient(90deg, #38bdf8 0%, #818cf8 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin: 0;
-    }
-    .hero-tagline {
-        font-size: 0.95rem;
-        color: #94a3b8;
-        margin-top: 6px;
-        margin-bottom: 0px;
-    }
-    .step-log {
-        font-size: 0.88rem;
-        padding: 8px 12px;
-        border-left: 3px solid #6366f1;
-        background: rgba(99, 102, 241, 0.08);
-        margin: 5px 0;
-        border-radius: 0 6px 6px 0;
-    }
-    .citation-card {
-        padding: 10px 14px;
-        background: #1e293b;
-        border: 1px solid #334155;
-        border-radius: 8px;
-        margin-bottom: 8px;
-    }
-    .citation-header {
-        font-weight: 600;
-        color: #38bdf8;
-        font-size: 0.85rem;
-    }
-    .citation-snippet {
-        font-size: 0.82rem;
-        color: #cbd5e1;
-        font-style: italic;
-        margin-top: 4px;
-    }
-</style>
-""", unsafe_allow_html=True)
+:root { --accent:#7c8cff; --accent-2:#a78bfa; --good:#3ecf8e; --warn:#f5b84a; --line:rgba(128,140,170,.22); }
+html, body, [class*="css"] { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+#MainMenu, footer, header [data-testid="stToolbar"] { visibility: hidden; }
+.block-container { max-width: 900px; padding-top: 2.2rem; }
+[data-testid="stSidebar"] { border-right: 1px solid var(--line); }
+[data-testid="stSidebar"] .block-container { padding-top: 1.4rem; }
 
-# Hero Header
-st.markdown("""
-<div class="hero-container">
-    <div class="hero-title">🛡️ HALO: Production Agentic CRAG</div>
-    <div class="hero-tagline">Hybrid RRF (Dense Chroma + BM25) • CrossEncoder Neural Rerank • Query Decomposition • Calibrated Confidence & Citations</div>
-</div>
+.halo-brand { display:flex; align-items:center; gap:12px; margin-bottom:.4rem; }
+.halo-logo { width:34px; height:34px; border-radius:50%; background:conic-gradient(from 200deg,var(--accent),var(--accent-2),var(--accent));
+  display:grid; place-items:center; box-shadow:0 0 22px rgba(124,140,255,.25); }
+.halo-logo::after { content:""; width:22px; height:22px; border-radius:50%; background:var(--background-color, #0e1117); }
+.halo-name { font-weight:700; font-size:20px; line-height:1.1; }
+.halo-tag { opacity:.6; font-size:12px; }
+
+.halo-hero { text-align:center; padding:2.2rem 0 1.4rem; }
+.halo-hero h1 { font-size:2.4rem; letter-spacing:-.03em; margin:0 0 .4rem; }
+.halo-hero h1 em { font-style:normal; background:linear-gradient(135deg,var(--accent),var(--accent-2));
+  -webkit-background-clip:text; background-clip:text; color:transparent; }
+.halo-hero p { opacity:.72; max-width:560px; margin:0 auto; }
+
+.step-log { display:inline-flex; align-items:center; gap:6px; margin:3px 0; padding:4px 12px; border-radius:999px;
+  border:1px solid var(--line); border-left:3px solid var(--accent); font-size:13px; }
+
+.citation-card { border:1px solid var(--line); border-radius:12px; padding:10px 14px; margin-bottom:8px; }
+.citation-header { font-weight:600; font-size:13px; color:var(--accent); margin-bottom:3px; }
+.citation-snippet { font-size:13px; opacity:.78; font-style:italic; }
+
+[data-testid="stChatMessage"] { border-radius:14px; padding:.9rem 1rem; }
+[data-testid="stChatInput"] textarea { font-size:15px; }
+.stButton > button[kind="primary"] { background:linear-gradient(135deg,var(--accent),var(--accent-2)); border:0; }
+[data-testid="stFileUploaderDropzone"] { border-radius:14px; border:1.5px dashed var(--line); }
+[data-testid="stExpander"] { border-radius:12px; }
+</style>
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------- helpers
@@ -237,7 +205,11 @@ def ingest_uploads(files):
 # ---------------------------------------------------------------- sidebar
 
 with st.sidebar:
-    st.markdown("### 📂 Documents")
+    st.markdown('''<div class="halo-brand"><span class="halo-logo"></span>
+        <div><div class="halo-name">halo</div><div class="halo-tag">ask anything · retrieve truth</div></div></div>''',
+                unsafe_allow_html=True)
+    st.caption("Prefer a browser app? Run `halo serve` and open http://localhost:8000")
+    st.markdown("#### Documents")
     uploaded_files = st.file_uploader("Upload files (PDF, TXT, MD)", type=["pdf", "txt", "md"],
                                       accept_multiple_files=True)
     if st.button("🚀 Ingest & index", type="primary", use_container_width=True):
@@ -265,17 +237,19 @@ with st.sidebar:
     else:
         st.caption("No documents indexed yet.")
 
-    st.markdown("---")
-    st.markdown("### ⚙️ Pipeline")
-    st.info(f"**Model:** `{settings.LLM_MODEL}`\n\n"
-            f"**Embeddings:** `{settings.EMBEDDING_MODEL}`\n\n"
-            f"**Retrieval:** `Hybrid RRF (BM25 + Chroma)` + cross-encoder\n\n"
-            f"**Top-K chunks:** `{settings.TOP_K_RETRIEVE}`\n\n"
-            f"**Max retries / web rewrites:** `{settings.MAX_REGENERATIONS}` / `{settings.MAX_REWRITES}`")
+    st.divider()
+    with st.expander("Pipeline settings"):
+        from halo.rag.bm25 import backend_name
+
+        st.caption(f"**Model** `{settings.LLM_MODEL}`  \n"
+                   f"**Embeddings** `{settings.EMBEDDING_MODEL}`  \n"
+                   f"**Keyword search** `{backend_name()}`  \n"
+                   f"**Top-K chunks** `{settings.TOP_K_RETRIEVE}`  \n"
+                   f"**Retries / web rewrites** `{settings.MAX_REGENERATIONS}` / `{settings.MAX_REWRITES}`")
     if not settings.llm_configured:
         st.error("Set OPENAI_API_KEY (or LLM_BASE_URL for a local model) in .env")
 
-    if st.button("🧹 Clear chat", use_container_width=True):
+    if st.button("New conversation", type="primary", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
 
@@ -283,6 +257,11 @@ with st.sidebar:
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+if not st.session_state.messages:
+    st.markdown('''<div class="halo-hero"><h1>Answers you can <em>verify</em>.</h1>
+        <p>Ask about your documents. Every sentence comes back with the passage that supports it,
+        and anything halo can't back up is flagged.</p></div>''', unsafe_allow_html=True)
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):

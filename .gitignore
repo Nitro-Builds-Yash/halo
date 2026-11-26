@@ -17,4 +17,4 @@ evals/dataset.jsonl
 .idea/
 
 # Rust build output
-rust/target/
+crates/target/
