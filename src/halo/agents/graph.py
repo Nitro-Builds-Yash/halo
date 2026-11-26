@@ -11,6 +11,7 @@ from halo.agents.nodes.web_search import web_search
 from halo.agents.state import GraphState
 from halo.core.config import settings
 from halo.core.log import get_logger
+from halo.core.tracing import configure_tracing
 
 logger = get_logger(__name__)
 
@@ -61,4 +62,5 @@ def build_graph():
     return workflow.compile()
 
 
+configure_tracing()
 graph = build_graph()

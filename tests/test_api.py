@@ -68,7 +68,7 @@ def test_api_key_required_when_configured(client, monkeypatch):
 
 def test_query_endpoint(client, monkeypatch):
     class FakeGraph:
-        async def ainvoke(self, state):
+        async def ainvoke(self, state, config=None):
             return {**state, "generation": "30 days", "confidence": 0.9, "verdict": "useful",
                     "doc_metadata": [{"type": "web", "source": "https://x"}], "documents": ["d"]}
 
@@ -81,7 +81,7 @@ def test_query_endpoint(client, monkeypatch):
 
 def test_query_hides_internal_errors(client, monkeypatch):
     class Broken:
-        async def ainvoke(self, state):
+        async def ainvoke(self, state, config=None):
             raise RuntimeError("sk-secret-key leaked in message")
 
     monkeypatch.setattr(server, "graph", Broken())
@@ -101,3 +101,46 @@ def test_list_and_delete_documents(client, monkeypatch):
     assert client.delete("/api/v1/documents/a.pdf").json()["chunks_removed"] == 3
     assert cleared
     assert client.delete("/api/v1/documents/missing.pdf").status_code == 404
+
+
+def test_query_with_history_returns_standalone(client, monkeypatch):
+    seen = {}
+
+    class FakeGraph:
+        async def ainvoke(self, state, config=None):
+            seen["question"], seen["config"] = state["question"], config
+            return {**state, "generation": "45 days", "confidence": 0.9, "verdict": "useful"}
+
+    monkeypatch.setattr(server, "graph", FakeGraph())
+    monkeypatch.setattr(server, "condense_question",
+                        lambda q, h: "refund window for international orders?" if h else q)
+    body = {"question": "what about international?",
+            "history": [{"role": "user", "content": "refund window?"}, {"role": "assistant", "content": "30 days"}]}
+    data = client.post("/api/v1/query", json=body).json()
+    assert data["question"] == "what about international?"
+    assert data["standalone_question"] == "refund window for international orders?"
+    assert seen["question"] == "refund window for international orders?"
+    assert "api" in seen["config"]["tags"]
+    bad = client.post("/api/v1/query", json={"question": "x", "history": [{"role": "system", "content": "y"}]})
+    assert bad.status_code == 422
+
+
+def test_serves_stored_files_safely(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(server.settings, "DOCUMENTS_DIR", str(tmp_path / "files"))
+    (tmp_path / "files").mkdir()
+    (tmp_path / "files" / "policy.pdf").write_bytes(b"%PDF-1.4 test")
+    (tmp_path / "secret.txt").write_text("nope")
+    r = client.get("/api/v1/documents/policy.pdf/file")
+    assert r.status_code == 200 and r.content == b"%PDF-1.4 test"
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.headers["content-disposition"].startswith("inline")
+    assert client.get("/api/v1/documents/missing.pdf/file").status_code == 404
+    assert client.get("/api/v1/documents/..%2Fsecret.txt/file").status_code == 404
+
+
+def test_api_key_query_param_for_links(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(server.settings, "API_KEY", "secret")
+    monkeypatch.setattr(server.settings, "DOCUMENTS_DIR", str(tmp_path))
+    (tmp_path / "a.txt").write_text("hi")
+    assert client.get("/api/v1/documents/a.txt/file").status_code == 401
+    assert client.get("/api/v1/documents/a.txt/file?api_key=secret").status_code == 200

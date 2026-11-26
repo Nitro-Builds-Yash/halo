@@ -1,6 +1,7 @@
 import argparse
 import hashlib
 import os
+import shutil
 from typing import List, Tuple
 
 from langchain_core.documents import Document
@@ -68,7 +69,30 @@ def delete_source(source: str) -> int:
     except Exception:
         logger.exception("Could not delete Chroma chunks for %s", source)
     removed_sparse = get_bm25_index().delete_source(source)
+    _remove_stored_file(source)
     return max(removed_dense, removed_sparse)
+
+
+def stored_file_path(source: str) -> str:
+    return os.path.join(settings.documents_dir, os.path.basename(source))
+
+
+def _store_file(path: str, source: str) -> None:
+    """Keep the original so citations can link to it (the API serves it at /documents/{source}/file)."""
+    try:
+        os.makedirs(settings.documents_dir, exist_ok=True)
+        shutil.copyfile(path, stored_file_path(source))
+    except Exception:
+        logger.exception("Could not store a copy of %s for citation links", source)
+
+
+def _remove_stored_file(source: str) -> None:
+    try:
+        os.remove(stored_file_path(source))
+    except FileNotFoundError:
+        pass
+    except Exception:
+        logger.exception("Could not remove the stored copy of %s", source)
 
 
 def ingest_file_list(file_paths: List[str], source_names: List[str] | None = None) -> Tuple[int, int]:
@@ -117,6 +141,7 @@ def ingest_file_list(file_paths: List[str], source_names: List[str] | None = Non
             metadatas=[s.metadata for s in unique_splits],
             ids=ids,
         )
+        _store_file(path, source)
         total_docs += len(docs)
         total_chunks += len(unique_splits)
         logger.info("Ingested %s: %d page(s), %d chunk(s)", source, len(docs), len(unique_splits))
