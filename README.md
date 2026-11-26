@@ -48,8 +48,8 @@
   </tr>
   <tr>
     <td valign="top">
-      <h3>📎 Real citations</h3>
-      Answers cite the source file and page (or URL), with a quote, and each citation links to the original document opened at that page. Citations to sources the model never saw are removed.
+      <h3>📎 Sentence-level citations</h3>
+      Every sentence of an answer points to the exact passage that supports it, with a link to the original page. Sentences no source supports are flagged and lower the confidence score.
     </td>
     <td valign="top">
       <h3>🔁 Self-correction</h3>
@@ -169,7 +169,8 @@ Small local models are less reliable at structured output, so expect more fallba
 3. **Hybrid search:** each sub-question searches Chroma and BM25. Results are fused with RRF and reranked by a cross-encoder.
 4. **Relevance gate:** per chunk, a score ≥ 0.85 is kept, < 0.40 is dropped, and anything in between is graded by the LLM in one batched call.
 5. **Generate:** the answer is written strictly from the kept context, with citations and a confidence score.
-6. **Verify:** two checks, whether every claim is supported by the sources and whether the answer resolves the question. If a checker errors, the answer counts as **not** verified.
+6. **Sentence evidence:** each sentence is matched to the passage that supports it. The model's own labels are re-checked against the passage text, so a wrong number ("60 days" when the source says 30) is flagged as unsupported.
+7. **Verify:** two checks, whether every claim is supported by the sources and whether the answer resolves the question. If a checker errors, the answer counts as **not** verified.
 
 When there's no relevant local context, or an answer fails verification, Halo rewrites the query and adds web results (at most one rewrite and one retry). If it still can't verify an answer, it returns the best excerpts with a clear disclaimer.
 
@@ -241,6 +242,12 @@ curl -s localhost:8000/api/v1/query \
   "confidence": 0.9,
   "citations": [{ "source": "policy.pdf", "page": 5, "snippet": "international orders: 45 days from delivery",
                   "url": "/api/v1/documents/policy.pdf/file#page=5" }],
+  "sentences": [{ "text": "International orders can be returned within 45 days of delivery.",
+                  "supported": true, "score": 1.0,
+                  "sources": [{ "source": "policy.pdf", "page": 5, "chunk": 2,
+                                "snippet": "International orders can be returned within 45 days of delivery.",
+                                "url": "/api/v1/documents/policy.pdf/file#page=5" }] }],
+  "unsupported_sentences": 0,
   "verdict": "useful",
   "retry_count": 0,
   "rewrite_count": 0,
@@ -332,7 +339,7 @@ Each release is listed on the [Releases page](https://github.com/Nitro-Builds-Ya
 - [x] Multi-turn chat (follow-ups rewritten into standalone questions)
 - [x] Citations that link to the original document page
 - [x] LangSmith tracing and one-click Render deploy
-- [ ] Sentence-level citations
+- [x] Sentence-level citations with unsupported sentences flagged
 - [ ] Table extraction and OCR for scanned PDFs
 
 ## 📄 License

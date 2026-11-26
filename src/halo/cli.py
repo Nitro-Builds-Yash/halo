@@ -98,6 +98,12 @@ def _print_result(result: dict):
             table.add_row(escape(str(c.get("source"))), str(c.get("page") or "–"), escape(str(c.get("snippet", ""))))
         console.print(table)
 
+    unsupported = [s for s in result.get("sentences", []) if s.get("supported") is False]
+    if unsupported:
+        console.print(f"[yellow]⚠ {len(unsupported)} sentence(s) not found in the sources:[/yellow]")
+        for s in unsupported:
+            console.print(f"  [yellow]•[/yellow] [dim]{escape(s['text'])}[/dim]")
+
     meta = [
         f"chunks {len(result['documents'])}",
         f"web search {'yes' if result['web_search_used'] else 'no'}",

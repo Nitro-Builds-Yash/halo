@@ -12,6 +12,7 @@ class AgentState(TypedDict, total=False):
     generation: str
     confidence: float
     citations: List[Dict[str, Any]]
+    sentences: List[Dict[str, Any]]     # sentence-level citations (see halo.agents.attribution)
     verdict: str                        # useful | not_grounded | not_useful | no_context
     retry_count: int                    # regenerations after a failed check
     rewrite_count: int                  # query rewrites / web searches
@@ -33,6 +34,7 @@ def initial_state(question: str) -> AgentState:
         "generation": "",
         "confidence": 0.0,
         "citations": [],
+        "sentences": [],
         "verdict": "",
         "retry_count": 0,
         "rewrite_count": 0,

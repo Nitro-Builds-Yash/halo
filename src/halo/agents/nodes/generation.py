@@ -2,6 +2,7 @@ from typing import Any, Dict, List
 
 from langchain_core.prompts import ChatPromptTemplate
 
+from halo.agents.attribution import attribute
 from halo.agents.schemas import AnswerWithCitations
 from halo.agents.state import AgentState
 from halo.core.config import settings
@@ -18,7 +19,8 @@ _SYSTEM = """You are a rigorous QA assistant.
 1. Answer the user question accurately and concisely, strictly based on the provided context.
 2. If the context does not contain enough information, say exactly what is missing.
 3. Attach citations (source, page, short verbatim snippet) for each factual claim. Only cite sources that appear in the context headers.
-4. Give a confidence score between 0.0 and 1.0 for how completely and unambiguously the context answers the question:
+4. In `sentences`, repeat your answer split into sentences, in order and word for word, and give for each the [#n] numbers of the passages that directly support it. Use an empty list for a sentence no passage supports.
+5. Give a confidence score between 0.0 and 1.0 for how completely and unambiguously the context answers the question:
    - 0.85 - 1.0: fully answered with direct evidence
    - 0.50 - 0.84: partially answered or inferred
    - 0.00 - 0.49: insufficient or speculative"""
@@ -35,7 +37,7 @@ def format_context(documents: List[str], metas: List[Dict[str, Any]],
     for idx, doc in enumerate(documents):
         meta = metas[idx] if idx < len(metas) else {}
         page = meta.get("page")
-        header = f"[Source: {meta.get('source', 'Unknown Source')} | Page: {page if page is not None else 'N/A'}]"
+        header = f"[#{idx + 1}] [Source: {meta.get('source', 'Unknown Source')} | Page: {page if page is not None else 'N/A'}]"
         body = doc if len(doc) <= max_doc else doc[:max_doc] + " [...]"
         block = f"{header}\n{body}"
         if blocks and used + len(block) > budget:
@@ -76,15 +78,17 @@ def generate(state: AgentState) -> dict:
 
     if not documents:
         logger.info("generate: no context available")
-        return {"generation": NO_CONTEXT_ANSWER, "confidence": 0.0, "citations": []}
+        return {"generation": NO_CONTEXT_ANSWER, "confidence": 0.0, "citations": [], "sentences": []}
 
     context = format_context(documents, metas)
     try:
         res = generate_answer(question, context)
+        labelled = [s.model_dump() for s in res.sentences]
         return {
             "generation": res.answer,
             "confidence": float(res.confidence),
             "citations": filter_citations([c.model_dump() for c in res.citations], metas),
+            "sentences": attribute(res.answer, labelled, documents, metas),
         }
     except Exception:
         logger.exception("generate: structured output failed; falling back to plain text")
@@ -93,8 +97,10 @@ def generate(state: AgentState) -> dict:
             ("human", "Context:\n{context}\n\nQuestion: {question}"),
         ]) | get_llm()).invoke({"context": context, "question": question})
         # Unstructured answers have no self-rated confidence; keep it below the cache threshold.
+        text = getattr(raw, "content", str(raw))
         return {
-            "generation": getattr(raw, "content", str(raw)),
+            "generation": text,
             "confidence": 0.5,
             "citations": [],
+            "sentences": attribute(text, None, documents, metas),  # no labels: match passages directly
         }

@@ -149,3 +149,23 @@ def test_documents_metadata_scores_stay_aligned(pipeline):
     pipeline.grounding = [False]
     state = pipeline.run()
     assert len(state["documents"]) == len(state["doc_metadata"]) == len(state["doc_scores"])
+
+
+def test_answer_carries_sentence_level_citations(pipeline):
+    state = pipeline.run()
+    assert state["sentences"][0]["text"] == "Refunds are accepted within 30 days."
+    assert state["sentences"][0]["supported"] is True
+    assert state["sentences"][0]["sources"][0]["source"] == "policy.pdf"
+
+
+def test_unsupported_sentences_lower_confidence(pipeline, monkeypatch):
+    from halo.agents.schemas import AnswerWithCitations
+
+    def unsupported_answer(question, context):
+        return AnswerWithCitations(answer="Refunds are accepted within 90 days, with free return shipping.",
+                                   confidence=0.9, citations=[])
+
+    monkeypatch.setattr(generation, "generate_answer", unsupported_answer)
+    state = pipeline.run()
+    assert state["sentences"][0]["supported"] is False
+    assert state["confidence"] < 0.5  # all sentences unsupported halves the calibrated confidence
