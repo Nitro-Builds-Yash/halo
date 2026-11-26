@@ -169,3 +169,18 @@ def test_pdf_loading_uses_one_based_pages():
     assert len(docs) > 1
     assert docs[0].metadata == {"source": "HALO_CRAG_INTERVIEW_DOSSIER.pdf", "page": 1}
     assert [d.metadata["page"] for d in docs] == sorted(d.metadata["page"] for d in docs)
+
+
+def test_originals_are_stored_and_removed(tmp_path, monkeypatch):
+    vs = FakeVectorstore()
+    bm25 = BM25Index(persist_path=str(tmp_path / "bm25.json"))
+    monkeypatch.setattr(ingest, "get_vectorstore", lambda: vs)
+    monkeypatch.setattr(ingest, "get_bm25_index", lambda: bm25)
+    monkeypatch.setattr(ingest.settings, "DOCUMENTS_DIR", str(tmp_path / "files"))
+    f = tmp_path / "upload-123.txt"
+    f.write_text("Refunds within 30 days.")
+    ingest.ingest_file_list([str(f)], ["policy.txt"])
+    stored = tmp_path / "files" / "policy.txt"
+    assert stored.read_text() == "Refunds within 30 days."
+    ingest.delete_source("policy.txt")
+    assert not stored.exists()
