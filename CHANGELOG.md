@@ -2,6 +2,22 @@
 
 All notable changes to halo are documented here. Each version's section becomes its GitHub release notes.
 
+## [2.3.0] - 2026-11-26
+
+Sentence-level citations.
+
+#### Added
+- Every answer sentence now carries its own evidence: the passage that supports it, the exact supporting sentence, the source, the page and a link. The API returns these as `sentences`, along with an `unsupported_sentences` count.
+- The generator labels each sentence with the passages it used. Halo re-checks every label against the passage text, corrects wrong labels, ignores invented ones, and flags sentences whose numbers or key terms don't appear in the sources.
+- Unsupported sentences lower the answer's confidence: if every sentence is unsupported, it halves.
+- The Streamlit app shows sentence evidence with ✅/⚠️ markers, and the CLI lists any unsupported sentences under the answer.
+
+#### Install
+
+```bash
+pip install "halo @ git+https://github.com/Nitro-Builds-Yash/halo@v2.3.0"
+```
+
 ## [2.2.0] - 2026-11-26
 
 Follow-up questions, citation links, tracing and one-click deployment.

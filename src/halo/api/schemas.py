@@ -24,6 +24,10 @@ class QueryResponse(BaseModel):
     generation: str
     confidence: float = Field(default=0.0, description="Confidence score between 0.0 and 1.0")
     citations: List[Dict[str, Any]] = Field(default_factory=list)
+    sentences: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="The answer sentence by sentence: text, supported (true/false/null), score, sources with evidence")
+    unsupported_sentences: int = 0
     documents: List[str] = Field(default_factory=list)
     verdict: Optional[str] = None
     retry_count: int = 0

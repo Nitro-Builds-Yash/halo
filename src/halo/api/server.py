@@ -95,6 +95,7 @@ def health():
             "document_management",
             "multi_turn_chat",
             "citation_links",
+            "sentence_level_citations",
         ],
     }
 
@@ -132,7 +133,8 @@ async def chat_stream(query: QueryRequest):
             yield sse({"event": "status", "node": "cache", "message": "Matched semantic cache",
                        "similarity": hit["cached_similarity"]})
             yield sse({"event": "message", "content": hit["generation"], "confidence": hit["confidence"],
-                       "citations": hit["citations"], "cached": True, "fallback": False})
+                       "citations": hit["citations"], "sentences": hit["sentences"],
+                       "cached": True, "fallback": False})
             yield sse({"event": "done"})
             return
 
@@ -157,7 +159,8 @@ async def chat_stream(query: QueryRequest):
         if should_cache(result):
             await run_in_threadpool(semantic_cache.store, standalone, cache_payload(state))
         yield sse({"event": "message", "content": result["generation"], "confidence": result["confidence"],
-                   "citations": result["citations"], "verdict": result["verdict"],
+                   "citations": result["citations"], "sentences": result["sentences"],
+                   "unsupported_sentences": result["unsupported_sentences"], "verdict": result["verdict"],
                    "fallback": result["is_fallback"], "cached": False})
         yield sse({"event": "done"})
 

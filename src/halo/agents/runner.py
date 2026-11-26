@@ -3,6 +3,7 @@ import os
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
+from halo.agents.attribution import unsupported_count
 from halo.agents.conversation import condense_question
 from halo.agents.state import initial_state
 from halo.core.config import settings
@@ -39,6 +40,8 @@ def summarize(question: str, state: Dict[str, Any], standalone_question: Optiona
         "generation": state.get("generation", ""),
         "confidence": float(state.get("confidence", 0.0) or 0.0),
         "citations": link_citations(state.get("citations", [])),
+        "sentences": [{**s, "sources": link_citations(s.get("sources", []))} for s in state.get("sentences") or []],
+        "unsupported_sentences": unsupported_count(state.get("sentences") or []),
         "documents": state.get("documents", []),
         "verdict": state.get("verdict"),
         "retry_count": state.get("retry_count", 0),
@@ -69,7 +72,7 @@ def cached_answer(question: str, cache: SemanticCache, standalone_question: Opti
 
 
 def cache_payload(result: Dict[str, Any]) -> Dict[str, Any]:
-    keys = ("generation", "confidence", "citations", "documents", "doc_metadata")
+    keys = ("generation", "confidence", "citations", "sentences", "documents", "doc_metadata")
     return {k: result[k] for k in keys if k in result}
 
 

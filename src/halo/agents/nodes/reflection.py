@@ -2,6 +2,7 @@ from typing import List, Optional
 
 from langchain_core.prompts import ChatPromptTemplate
 
+from halo.agents.attribution import coverage
 from halo.agents.nodes.generation import format_context
 from halo.agents.schemas import GradeAnswer, GradeHallucinations
 from halo.agents.state import AgentState
@@ -70,10 +71,12 @@ def reflect(state: AgentState) -> dict:
         return {"verdict": "not_grounded"}
 
     logger.info("reflect: answer verified")
-    return {
-        "verdict": "useful",
-        "confidence": calibrate_confidence(state.get("confidence", 0.0), state.get("doc_scores") or []),
-    }
+    confidence = calibrate_confidence(state.get("confidence", 0.0), state.get("doc_scores") or [])
+    # Sentences no passage supports lower confidence: all unsupported halves it.
+    share = coverage(state.get("sentences") or [])
+    if share is not None:
+        confidence = round(confidence * (0.5 + 0.5 * share), 3)
+    return {"verdict": "useful", "confidence": confidence}
 
 
 def route_after_reflect(state: AgentState) -> str:

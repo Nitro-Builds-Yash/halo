@@ -15,7 +15,7 @@ def graceful_fallback(state: AgentState) -> dict:
     logger.info("fallback: verdict=%s, %d document(s)", state.get("verdict"), len(documents))
 
     if not documents:
-        return {"generation": NO_CONTEXT_ANSWER, "confidence": 0.0, "citations": [], "is_fallback": True}
+        return {"generation": NO_CONTEXT_ANSWER, "confidence": 0.0, "citations": [], "sentences": [], "is_fallback": True}
 
     citations: List[Dict[str, Any]] = []
     for idx, doc in enumerate(documents[:3]):
@@ -31,4 +31,4 @@ def graceful_fallback(state: AgentState) -> dict:
         f"**Partial confidence:** I couldn't produce a fully verified answer after {attempts} attempt(s). "
         "These are the most relevant excerpts I found; please check the cited sources directly."
     )
-    return {"generation": text, "confidence": 0.3, "citations": citations, "is_fallback": True}
+    return {"generation": text, "confidence": 0.3, "citations": citations, "sentences": [], "is_fallback": True}
