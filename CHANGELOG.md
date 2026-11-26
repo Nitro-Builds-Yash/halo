@@ -2,6 +2,22 @@
 
 All notable changes to halo are documented here. Each version's section becomes its GitHub release notes.
 
+## [2.2.0] - 2026-11-26
+
+Follow-up questions, citation links, tracing and one-click deployment.
+
+#### Added
+- **Multi-turn chat:** follow-ups like "what about international orders?" are rewritten into a standalone question from the recent conversation, then retrieved, cached and verified as usual. The API takes an optional `history` and returns the `standalone_question`. The CLI and Streamlit app keep the conversation (`new` resets it in the CLI).
+- **Citation links:** original uploads are stored, and each citation now carries a `url`: the web page, or `/api/v1/documents/{source}/file#page=N` for indexed documents. Removing a document removes its stored copy.
+- **LangSmith tracing:** set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` to trace every node and LLM call. Traces are tagged `api`, `stream`, `cli` or `ui`.
+- **Render blueprint:** `render.yaml` and a Deploy to Render button. The Docker image now listens on `$PORT` when set.
+
+#### Install
+
+```bash
+pip install "halo @ git+https://github.com/Nitro-Builds-Yash/halo@v2.2.0"
+```
+
 ## [2.1.0] - 2026-11-25
 
 Corrective RAG that answers questions about your PDFs, text and Markdown files, and **checks every answer against its sources** before returning it.

@@ -5,12 +5,13 @@ import tempfile
 import uuid
 from typing import AsyncGenerator, List
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from halo import __version__ as VERSION
+from halo.agents.conversation import condense_question
 from halo.agents.graph import graph
 from halo.agents.runner import cache_payload, cached_answer, should_cache, summarize
 from halo.agents.state import initial_state
@@ -18,6 +19,7 @@ from halo.api.schemas import DeleteResponse, DocumentList, IngestResponse, Query
 from halo.core.config import settings
 from halo.core.log import get_logger
 from halo.core.semantic_cache import SemanticCache
+from halo.core.tracing import run_config, tracing_enabled
 from halo.rag.ingest import SUPPORTED_EXTENSIONS, delete_source, ingest_file_list, list_sources
 
 logger = get_logger(__name__)
@@ -52,9 +54,11 @@ NODE_STATUS = {
 }
 
 
-def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
-    """If API_KEY is configured, every /api/v1 route requires a matching X-API-Key header."""
-    if settings.API_KEY and x_api_key != settings.API_KEY:
+def require_api_key(x_api_key: str | None = Header(default=None),
+                    api_key: str | None = Query(default=None, include_in_schema=False)) -> None:
+    """If API_KEY is configured, every /api/v1 route requires a matching X-API-Key header
+    (or `?api_key=`, so citation links can be opened directly in a browser)."""
+    if settings.API_KEY and settings.API_KEY not in (x_api_key, api_key):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
@@ -79,6 +83,7 @@ def health():
         "service": "halo-crag-api",
         "version": VERSION,
         "auth_required": bool(settings.API_KEY),
+        "tracing": tracing_enabled(),
         "features": [
             "semantic_cache_entrypoint",
             "hybrid_bm25_dense_rrf",
@@ -88,25 +93,28 @@ def health():
             "deterministic_fallback",
             "sse_streaming",
             "document_management",
+            "multi_turn_chat",
+            "citation_links",
         ],
     }
 
 
 @app.post("/api/v1/query", response_model=QueryResponse, dependencies=[Depends(require_api_key)])
 async def sync_query(query: QueryRequest):
-    hit = await run_in_threadpool(cached_answer, query.question, semantic_cache)
+    standalone = await run_in_threadpool(condense_question, query.question, query.history_dicts())
+    hit = await run_in_threadpool(cached_answer, query.question, semantic_cache, standalone)
     if hit:
         return QueryResponse(**hit)
 
     try:
-        state = await graph.ainvoke(initial_state(query.question))
+        state = await graph.ainvoke(initial_state(standalone), config=run_config("api"))
     except Exception:
         logger.exception("Pipeline failed")
         raise HTTPException(status_code=500, detail="The question could not be processed. Check server logs.") from None
 
-    result = summarize(query.question, state)
+    result = summarize(query.question, state, standalone)
     if should_cache(result):
-        await run_in_threadpool(semantic_cache.store, query.question, cache_payload(state))
+        await run_in_threadpool(semantic_cache.store, standalone, cache_payload(state))
     return QueryResponse(**result)
 
 
@@ -116,7 +124,10 @@ async def chat_stream(query: QueryRequest):
     sent as a `message` event, so users never see an answer that is later rejected."""
 
     async def event_generator() -> AsyncGenerator[str, None]:
-        hit = await run_in_threadpool(cached_answer, query.question, semantic_cache)
+        standalone = await run_in_threadpool(condense_question, query.question, query.history_dicts())
+        if standalone != query.question:
+            yield sse({"event": "status", "node": "condense", "message": f"Follow-up understood as: {standalone}"})
+        hit = await run_in_threadpool(cached_answer, query.question, semantic_cache, standalone)
         if hit:
             yield sse({"event": "status", "node": "cache", "message": "Matched semantic cache",
                        "similarity": hit["cached_similarity"]})
@@ -125,9 +136,9 @@ async def chat_stream(query: QueryRequest):
             yield sse({"event": "done"})
             return
 
-        state = initial_state(query.question)
+        state = initial_state(standalone)
         try:
-            async for event in graph.astream_events(state, version="v2"):
+            async for event in graph.astream_events(state, version="v2", config=run_config("stream")):
                 kind, name = event.get("event"), event.get("name")
                 if name not in NODE_STATUS:
                     continue
@@ -142,9 +153,9 @@ async def chat_stream(query: QueryRequest):
             yield sse({"event": "error", "error": "The question could not be processed."})
             return
 
-        result = summarize(query.question, state)
+        result = summarize(query.question, state, standalone)
         if should_cache(result):
-            await run_in_threadpool(semantic_cache.store, query.question, cache_payload(state))
+            await run_in_threadpool(semantic_cache.store, standalone, cache_payload(state))
         yield sse({"event": "message", "content": result["generation"], "confidence": result["confidence"],
                    "citations": result["citations"], "verdict": result["verdict"],
                    "fallback": result["is_fallback"], "cached": False})
@@ -221,3 +232,16 @@ async def remove_document(source: str):
         raise HTTPException(status_code=404, detail=f"No indexed document named {source!r}")
     await run_in_threadpool(semantic_cache.clear)
     return DeleteResponse(status="deleted", source=source, chunks_removed=removed)
+
+
+@app.get("/api/v1/documents/{source}/file", dependencies=[Depends(require_api_key)])
+async def get_document_file(source: str):
+    """Serve an indexed document's original file (citation links point here, with #page=N for PDFs)."""
+    name = os.path.basename(source)
+    root = os.path.realpath(settings.documents_dir)
+    path = os.path.realpath(os.path.join(root, name))
+    if name != source or os.path.dirname(path) != root or not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail=f"No stored file for {source!r}")
+    media = {".pdf": "application/pdf", ".md": "text/markdown; charset=utf-8"}.get(
+        os.path.splitext(name)[1].lower(), "text/plain; charset=utf-8")
+    return FileResponse(path, media_type=media, filename=name, content_disposition_type="inline")

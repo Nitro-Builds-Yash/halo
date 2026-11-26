@@ -1,0 +1,29 @@
+# One-click deploy of the Halo API to Render:
+#   https://render.com/deploy?repo=https://github.com/Nitro-Builds-Yash/halo
+# Render asks for the secrets marked `sync: false` during setup.
+services:
+  - type: web
+    name: halo-api
+    runtime: docker
+    plan: starter            # a persistent disk needs a paid instance; free instances lose the index on restart
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: API_KEY         # clients send it as X-API-Key; find it under the service's Environment tab
+        generateValue: true
+      - key: RERANK          # build without torch: the 512 MB starter instance can't hold the cross-encoder
+        value: "0"
+      - key: CHROMA_PERSIST_DIR
+        value: /data/chroma_db
+      - key: LANGSMITH_TRACING
+        value: "false"
+      - key: LANGSMITH_API_KEY
+        sync: false
+    disk:
+      name: halo-data
+      mountPath: /data
+      sizeGB: 1

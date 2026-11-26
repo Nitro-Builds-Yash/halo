@@ -49,27 +49,32 @@ def _print_step(node: str, update: dict):
         console.print(STEPS[node])
 
 
-def _run(question: str) -> dict:
+def _run(question: str, history: list | None = None) -> dict:
+    from halo.agents.conversation import condense_question
     from halo.agents.graph import graph
     from halo.agents.runner import cache_payload, cached_answer, should_cache, summarize
     from halo.agents.state import initial_state
     from halo.core.semantic_cache import SemanticCache
+    from halo.core.tracing import run_config
 
+    standalone = condense_question(question, history)
+    if standalone != question:
+        console.print(f"💬 [blue]Follow-up understood as[/blue] [dim]{escape(standalone)}[/dim]")
     cache = SemanticCache.get_instance()
-    hit = cached_answer(question, cache)
+    hit = cached_answer(question, cache, standalone)
     if hit:
         console.print(f"⚡ [green]Semantic cache hit[/green] [dim](similarity {hit['cached_similarity']})[/dim]")
         return hit
 
-    state = initial_state(question)
+    state = initial_state(standalone)
     with console.status("[bold green]Thinking...", spinner="dots"):
-        for output in graph.stream(state):
+        for output in graph.stream(state, config=run_config("cli")):
             for node, update in output.items():
                 _print_step(node, update or {})
                 state.update(update or {})
-    result = summarize(question, state)
+    result = summarize(question, state, standalone)
     if should_cache(result):
-        cache.store(question, cache_payload(state))
+        cache.store(standalone, cache_payload(state))
     return result
 
 
@@ -102,11 +107,14 @@ def _print_result(result: dict):
     console.print(f"[dim]{' · '.join(meta)}[/dim]\n")
 
 
-def _ask(question: str):
+def _ask(question: str, history: list | None = None) -> dict | None:
     try:
-        _print_result(_run(question))
+        result = _run(question, history)
     except Exception as e:  # keep the chat loop alive
         console.print(f"[bold red]Error:[/bold red] {escape(str(e))}")
+        return None
+    _print_result(result)
+    return result
 
 
 def _warn_if_unconfigured():
@@ -118,10 +126,11 @@ def cmd_chat(_args):
     console.print(Panel.fit(
         f"[bold cyan]halo[/bold cyan] [dim]v{__version__}[/dim]  ask anything. retrieve truth.\n"
         "[dim]Hybrid retrieval · cross-encoder gate · verified answers with citations[/dim]\n"
-        "[dim]Type a question, or 'exit' to quit.[/dim]",
+        "[dim]Ask follow-ups naturally. 'new' starts a fresh conversation, 'exit' quits.[/dim]",
         border_style="cyan",
     ))
     _warn_if_unconfigured()
+    history: list = []
     while True:
         try:
             question = console.input("[bold cyan]halo ›[/bold cyan] ").strip()
@@ -131,8 +140,15 @@ def cmd_chat(_args):
         if question.lower() in {"exit", "quit", "q"}:
             console.print("[dim]Bye.[/dim]")
             return
+        if question.lower() in {"new", "reset", "clear"}:
+            history = []
+            console.print("[dim]Started a new conversation.[/dim]")
+            continue
         if question:
-            _ask(question)
+            result = _ask(question, history)
+            if result:
+                history += [{"role": "user", "content": question},
+                            {"role": "assistant", "content": result["generation"]}]
 
 
 def cmd_ask(args):

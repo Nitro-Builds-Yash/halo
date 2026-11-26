@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     TOP_K_RETRIEVE: int = 4
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 200
+    DOCUMENTS_DIR: str = ""        # where original uploads are kept for citation links (default: <CHROMA_PERSIST_DIR>/files)
     MAX_CONTEXT_CHARS: int = 24000   # total context sent to the generator / graders
     MAX_DOC_CHARS: int = 4000        # per document (long web pages are truncated)
 
@@ -51,7 +52,19 @@ class Settings(BaseSettings):
     MAX_UPLOAD_MB: int = 25
     LOG_LEVEL: str = "INFO"
 
+    # Optional LangSmith tracing
+    LANGSMITH_TRACING: bool = False
+    LANGSMITH_API_KEY: str = ""
+    LANGSMITH_PROJECT: str = "halo"
+    LANGSMITH_ENDPOINT: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @property
+    def documents_dir(self) -> str:
+        import os
+
+        return self.DOCUMENTS_DIR or os.path.join(self.CHROMA_PERSIST_DIR, "files")
 
     @property
     def llm_configured(self) -> bool:

@@ -49,15 +49,15 @@
   <tr>
     <td valign="top">
       <h3>📎 Real citations</h3>
-      Answers cite the source file and page (or URL), with a quote. Citations to sources the model never saw are removed.
+      Answers cite the source file and page (or URL), with a quote, and each citation links to the original document opened at that page. Citations to sources the model never saw are removed.
     </td>
     <td valign="top">
       <h3>🔁 Self-correction</h3>
       When local context is missing or an answer fails its check, Halo rewrites the query and searches the web, with hard limits so it never loops.
     </td>
     <td valign="top">
-      <h3>⚡ Semantic cache</h3>
-      Verified answers are reused for near-identical questions, and the cache is cleared automatically whenever your documents change.
+      <h3>💬 Follow-up questions</h3>
+      Ask "what about international orders?" and Halo rewrites it into a standalone question from the conversation, then searches, caches and verifies that. Verified answers are cached and the cache clears when documents change.
     </td>
   </tr>
   <tr>
@@ -71,7 +71,7 @@
     </td>
     <td valign="top">
       <h3>🛡️ Production basics</h3>
-      Optional API key, upload limits and sanitizing, timeouts, logging, Docker Compose, and a tested CI pipeline.
+      Optional API key, upload limits, timeouts, LangSmith tracing of every step, Docker Compose, one-click Render deploy, and a tested CI pipeline.
     </td>
   </tr>
 </table>
@@ -116,6 +116,28 @@ docker compose up --build
 | Streamlit app | http://localhost:8501 |
 
 The API and app share one Chroma server, so documents uploaded in either show up in both. Build a smaller image without torch with `docker compose build --build-arg RERANK=0`.
+</details>
+
+<details>
+<summary><b>☁️ Deploy to Render</b></summary>
+<br>
+
+<a href="https://render.com/deploy?repo=https://github.com/Nitro-Builds-Yash/halo"><img src="https://render.com/images/deploy-to-render-button.svg" alt="Deploy to Render"></a>
+
+The [`render.yaml`](./render.yaml) blueprint deploys the API with a 1 GB disk for the index. Render asks for your `OPENAI_API_KEY` (and optionally `TAVILY_API_KEY` and `LANGSMITH_API_KEY`) and generates an `API_KEY` for clients. It uses the Starter plan, because a persistent disk needs a paid instance; the image is built without torch to fit in 512 MB.
+</details>
+
+<details>
+<summary><b>🔭 Trace every step with LangSmith</b></summary>
+<br>
+
+```dotenv
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_...
+LANGSMITH_PROJECT=halo
+```
+
+Each question becomes one trace named `halo`, tagged by where it came from (`api`, `stream`, `cli`, `ui`), with every graph node, LLM call, latency and token count.
 </details>
 
 <details>
@@ -175,7 +197,7 @@ flowchart LR
 
 | Command | What it does |
 | --- | --- |
-| `halo` | Interactive chat with live pipeline steps |
+| `halo` | Interactive chat with live pipeline steps and follow-up questions (`new` resets the conversation) |
 | `halo ask "question"` | Answer one question and exit |
 | `halo ingest ./docs a.pdf` | Index files and folders (`.pdf`, `.txt`, `.md`). Re-ingesting a file replaces it. |
 | `halo docs` / `halo docs rm a.pdf` | List indexed documents / remove one |
@@ -195,23 +217,30 @@ flowchart LR
 | `POST` | `/api/v1/chat/stream` | Server-Sent Events: one status event per step, then the final verified answer |
 | `POST` | `/api/v1/documents/upload` | Upload `.pdf` / `.txt` / `.md` files (size-limited) |
 | `GET` | `/api/v1/documents` | List indexed documents |
+| `GET` | `/api/v1/documents/{source}/file` | The original file; citation `url`s point here (with `#page=N` for PDFs) |
 | `DELETE` | `/api/v1/documents/{source}` | Remove a document from both indexes |
 
 ```bash
 curl -s localhost:8000/api/v1/query \
   -H "Content-Type: application/json" \
-  -d '{"question": "What is the refund window?"}'
+  -d '{"question": "What about international orders?",
+       "history": [{"role": "user", "content": "What is the refund window?"},
+                   {"role": "assistant", "content": "30 days from purchase."}]}'
 ```
+
+`history` is optional: send earlier messages (oldest first) to ask follow-ups. The response includes the `standalone_question` Halo actually answered.
 
 <details>
 <summary>Example response</summary>
 
 ```json
 {
-  "question": "What is the refund window?",
-  "generation": "Refunds are accepted within 30 days of purchase with the original receipt.",
-  "confidence": 0.92,
-  "citations": [{ "source": "policy.pdf", "page": 4, "snippet": "returns are permitted within 30 days" }],
+  "question": "What about international orders?",
+  "standalone_question": "What is the refund window for international orders?",
+  "generation": "International orders can be returned within 45 days of delivery.",
+  "confidence": 0.9,
+  "citations": [{ "source": "policy.pdf", "page": 5, "snippet": "international orders: 45 days from delivery",
+                  "url": "/api/v1/documents/policy.pdf/file#page=5" }],
   "verdict": "useful",
   "retry_count": 0,
   "rewrite_count": 0,
@@ -222,7 +251,7 @@ curl -s localhost:8000/api/v1/query \
 ```
 </details>
 
-If `API_KEY` is set, every `/api/v1/*` request needs an `X-API-Key` header. Interactive docs are at `/docs`.
+If `API_KEY` is set, every `/api/v1/*` request needs an `X-API-Key` header (or `?api_key=`, so citation links open in a browser). Interactive docs are at `/docs`.
 
 ## ⚙️ Configuration
 
@@ -240,6 +269,7 @@ All settings live in `.env`; see [`.env.example`](./.env.example) for the full l
 | `CACHE_SIMILARITY` | `0.92` | How similar a question must be to reuse an answer |
 | `API_KEY` | – | Require `X-API-Key` on the API |
 | `CHROMA_HOST` | – | Use a Chroma server instead of local files |
+| `LANGSMITH_TRACING` / `LANGSMITH_API_KEY` | `false` / – | Trace every step in LangSmith |
 
 ## 📊 Evaluation
 
@@ -299,8 +329,11 @@ Each release is listed on the [Releases page](https://github.com/Nitro-Builds-Ya
 - [x] Document management, Docker, local-LLM support
 - [x] Real RAGAS evaluation harness
 - [ ] Publish benchmark results on a public corpus
-- [ ] Multi-turn chat with conversation memory
-- [ ] Sentence-level citations linked to PDF pages
+- [x] Multi-turn chat (follow-ups rewritten into standalone questions)
+- [x] Citations that link to the original document page
+- [x] LangSmith tracing and one-click Render deploy
+- [ ] Sentence-level citations
+- [ ] Table extraction and OCR for scanned PDFs
 
 ## 📄 License
 

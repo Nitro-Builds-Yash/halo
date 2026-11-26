@@ -11,11 +11,13 @@ _SRC = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
+from halo.agents.conversation import condense_question
 from halo.agents.graph import graph
 from halo.agents.runner import cache_payload, cached_answer, should_cache, summarize
 from halo.agents.state import initial_state
 from halo.core.config import settings
 from halo.core.semantic_cache import SemanticCache
+from halo.core.tracing import run_config
 from halo.rag.ingest import delete_source, ingest_file_list, list_sources
 
 st.set_page_config(
@@ -162,16 +164,19 @@ def render_answer(msg, expanded_citations=False):
         render_trace(msg["meta"])
 
 
-def run_pipeline(question: str) -> dict:
+def run_pipeline(question: str, history: list | None = None) -> dict:
     """Run the graph with live step updates; returns the summarized result."""
+    standalone = condense_question(question, history)
+    if standalone != question:
+        step(f"💬 <b>Follow-up understood as</b>: <i>{esc(standalone)}</i>")
     cache = SemanticCache.get_instance()
-    hit = cached_answer(question, cache)
+    hit = cached_answer(question, cache, standalone)
     if hit:
         step(f"⚡ <b>Semantic cache hit</b>: similarity {esc(hit['cached_similarity'])}")
         return hit
 
-    final_state = initial_state(question)
-    for output in graph.stream(final_state):
+    final_state = initial_state(standalone)
+    for output in graph.stream(final_state, config=run_config("ui")):
         for node, update in output.items():
             update = update or {}
             if node == "decompose_query":
@@ -184,9 +189,9 @@ def run_pipeline(question: str) -> dict:
                 step(STEP_LABELS[node], "#ef4444" if node == "increment_retry" else None)
             final_state.update(update)
 
-    result = summarize(question, final_state)
+    result = summarize(question, final_state, standalone)
     if should_cache(result):
-        cache.store(question, cache_payload(final_state))
+        cache.store(standalone, cache_payload(final_state))
     return result
 
 
@@ -276,7 +281,8 @@ if user_query:
         status_box = st.status("⚡ Running the CRAG pipeline...", expanded=True)
         try:
             with status_box:
-                result = run_pipeline(user_query)
+                history = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[:-1]]
+                result = run_pipeline(user_query, history)
             status_box.update(label="✅ Done", state="complete", expanded=False)
         except Exception as e:
             status_box.update(label="❌ Pipeline error", state="error", expanded=True)
