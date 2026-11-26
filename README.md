@@ -15,6 +15,7 @@
 </p>
 
 <p align="center">
+  <a href="https://nitro-builds-yash.github.io/halo/"><b>🔴 Live demo</b></a> ·
   <a href="#-quickstart"><b>Quickstart</b></a> ·
   <a href="#-how-it-works"><b>How it works</b></a> ·
   <a href="#%EF%B8%8F-usage"><b>Usage</b></a> ·
@@ -34,6 +35,7 @@
 
 <p align="center">
   <img src="./docs/assets/web-app.png" width="100%" alt="The halo web app: a verified answer with a confidence ring, each sentence linked to its source passage, and an unsupported sentence flagged">
+  <br><b><a href="https://nitro-builds-yash.github.io/halo/?q=What+is+the+refund+window%3F">Try the live demo →</a></b>
   <br><sub>The built-in web app: each sentence linked to its source, an unsupported claim flagged, a hidden instruction in a vendor PDF blocked, and the follow-up search, LLM calls and cost shown.</sub>
 </p>
 
