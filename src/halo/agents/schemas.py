@@ -29,10 +29,18 @@ class Citation(BaseModel):
     page: Optional[int] = Field(default=None, description="Page number if applicable")
     snippet: str = Field(description="Exact excerpt verifying the answer")
 
+class AttributedSentence(BaseModel):
+    text: str = Field(description="One sentence of the answer, copied exactly")
+    chunks: List[int] = Field(default_factory=list,
+                              description="Numbers n of the [#n] context passages that support this sentence; empty if none")
+
 class AnswerWithCitations(BaseModel):
     answer: str = Field(description="Direct, factual response strictly derived from context")
     confidence: float = Field(ge=0.0, le=1.0, description="Numerical confidence score between 0.0 and 1.0 based on factual grounding")
     citations: List[Citation] = Field(default_factory=list, description="List of source citations with pages and snippets")
+    sentences: List[AttributedSentence] = Field(
+        default_factory=list,
+        description="The answer split into its sentences, in order, each with the passage numbers that support it")
 
 class SubQueries(BaseModel):
     sub_questions: List[str] = Field(

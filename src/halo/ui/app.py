@@ -154,12 +154,33 @@ def render_trace(meta):
         col4.metric("Verified", "Cached" if meta.get("cached") else ("No" if meta.get("fallback") else "Yes"))
 
 
+def render_sentences(sentences, expanded=False):
+    judged = [s for s in sentences or [] if s.get("supported") is not None]
+    if not judged:
+        return
+    unsupported = sum(1 for s in judged if not s["supported"])
+    label = (f"🧷 Sentence evidence: {unsupported} of {len(judged)} sentence(s) not found in the sources"
+             if unsupported else f"🧷 Sentence evidence: all {len(judged)} sentences supported")
+    with st.expander(label, expanded=expanded and unsupported > 0):
+        for s in sentences:
+            if s.get("supported") is None:
+                continue
+            mark = "✅" if s["supported"] else "⚠️"
+            st.markdown(f"{mark} **{s['text']}**")
+            for src in s.get("sources", []):
+                page = f", page {src['page']}" if src.get("page") is not None else ""
+                st.caption(f"{src.get('source')}{page}: “{src.get('snippet', '')}”")
+            if not s["supported"]:
+                st.caption("No passage in the sources supports this sentence.")
+
+
 def render_answer(msg, expanded_citations=False):
     if msg.get("fallback"):
         st.warning("Partial answer: this could not be fully verified against the sources.")
     st.markdown(msg["content"])
     render_confidence(msg.get("confidence"))
     render_citations(msg.get("citations"), expanded=expanded_citations)
+    render_sentences(msg.get("sentences"), expanded=expanded_citations)
     if "meta" in msg:
         render_trace(msg["meta"])
 
@@ -294,6 +315,7 @@ if user_query:
             "content": result["generation"] or "No answer produced.",
             "confidence": result["confidence"],
             "citations": result["citations"],
+            "sentences": result.get("sentences", []),
             "fallback": result["is_fallback"],
             "meta": {
                 "retained_chunks": len(result["documents"]),
