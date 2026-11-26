@@ -17,6 +17,8 @@ services:
         generateValue: true
       - key: RERANK          # build without torch: the 512 MB starter instance can't hold the cross-encoder
         value: "0"
+      - key: NATIVE          # compile the Rust keyword-search extension (~60x faster BM25 queries)
+        value: "1"
       - key: CHROMA_PERSIST_DIR
         value: /data/chroma_db
       - key: LANGSMITH_TRACING
