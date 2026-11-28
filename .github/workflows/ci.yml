@@ -17,6 +17,8 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+      - name: Install Tesseract (OCR tests)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr
       - name: Install (without the torch reranker, to keep CI fast)
         run: pip install -e ".[dev]"
       - name: Lint

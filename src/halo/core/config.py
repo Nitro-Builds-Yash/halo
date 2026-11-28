@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     MAX_CONTEXT_CHARS: int = 24000   # total context sent to the generator / graders
     MAX_DOC_CHARS: int = 4000        # per document (long web pages are truncated)
 
+    # Document extraction
+    EXTRACT_TABLES: bool = True      # PDF tables become their own Markdown-table chunks
+    OCR: str = "auto"                # "auto": OCR scanned pages and images when Tesseract is installed; "off"
+    OCR_LANG: str = "eng"            # Tesseract language(s), e.g. "eng+hin"
+    OCR_MIN_CHARS: int = 25          # PDF pages with less extractable text than this are OCR'd
+    OCR_TIMEOUT_SECONDS: int = 120
+    TESSERACT_CMD: str = ""          # path to the tesseract binary if it isn't on PATH
+
     # Self-correction ceilings
     MAX_REWRITES: int = 1          # query rewrites + web searches per question
     MAX_REGENERATIONS: int = 1     # retries after a failed grounding/answer check

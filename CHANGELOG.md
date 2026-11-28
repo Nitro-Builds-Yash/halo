@@ -2,6 +2,17 @@
 
 All notable changes to halo are documented here. Each version's section becomes its GitHub release notes.
 
+## [2.7.0] - 2026-11-28
+
+Tables, scanned documents, background uploads, saved conversations.
+
+#### Added
+- **PDF tables** (`EXTRACT_TABLES`): every table found by pdfplumber becomes its own chunk, written as a Markdown table right after its page, so rows and columns survive chunking.
+- **OCR** (`OCR=auto`, `OCR_LANG`, `TESSERACT_CMD`): PDF pages without a text layer are rendered at 300 dpi and read with Tesseract, and images (`.png`, `.jpg`, `.tiff`, `.webp`, `.bmp`) can be uploaded directly. Chunks carry `ocr: true`. The Docker image ships with Tesseract.
+- **Background uploads**: `POST /api/v1/documents/upload?background=true` returns `202` with a job, and `GET /api/v1/jobs/{id}` reports status, files done/total, the current file and per-file failures. Jobs run on one worker thread so index writes never race. Error details stay in the logs.
+- **Web app**: an upload progress bar, recent conversations saved in the browser (open or delete from the sidebar), and image uploads.
+- Files that yield no text are now reported back (for example, a scanned file when Tesseract isn't installed) instead of being skipped silently.
+
 ## [2.6.0] - 2026-11-26
 
 Production AI-engineering features.

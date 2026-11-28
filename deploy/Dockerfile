@@ -18,6 +18,10 @@ RUN mkdir -p /wheels && if [ "$NATIVE" = "1" ]; then \
 # ---- Stage 2: the runtime image (no Rust toolchain in it) ----
 FROM python:3.11-slim
 
+# Tesseract for OCR of scanned PDFs and images (set OCR=off to skip it at runtime)
+RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/*
+
 # Set RERANK=0 to build a smaller image without torch / the cross-encoder.
 ARG RERANK=1
 

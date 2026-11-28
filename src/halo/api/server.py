@@ -9,7 +9,7 @@ from typing import AsyncGenerator, List
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from halo import __version__ as VERSION
@@ -17,14 +17,16 @@ from halo.agents.conversation import condense_question
 from halo.agents.graph import graph
 from halo.agents.runner import budget_stopped, cache_payload, cached_answer, finish, should_cache, summarize
 from halo.agents.state import initial_state
-from halo.api.schemas import DeleteResponse, DocumentList, IngestResponse, QueryRequest, QueryResponse
+from halo.api.schemas import DeleteResponse, DocumentList, IngestResponse, JobResponse, QueryRequest, QueryResponse
 from halo.core import metrics, usage
 from halo.core.config import settings
 from halo.core.log import get_logger
 from halo.core.semantic_cache import SemanticCache
 from halo.core.tracing import run_config, tracing_enabled
 from halo.rag.bm25 import backend_name as keyword_backend
+from halo.rag.extract import ocr_available
 from halo.rag.ingest import SUPPORTED_EXTENSIONS, delete_source, ingest_file_list, list_sources
+from halo.rag.jobs import JobRegistry
 
 logger = get_logger(__name__)
 
@@ -44,6 +46,7 @@ app.add_middleware(
 )
 
 semantic_cache = SemanticCache.get_instance()
+ingestion_jobs = JobRegistry(ingest_file_list, on_finish=lambda: semantic_cache.clear())
 
 # The web app (src/halo/web): index at "/", assets under /static.
 WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
@@ -103,6 +106,7 @@ def health():
                    "fallback": settings.FALLBACK_LLM_MODEL or None},
         "injection_guard": settings.INJECTION_GUARD,
         "agentic_search": settings.AGENTIC_SEARCH,
+        "ocr": ocr_available(),
         "features": [
             "semantic_cache_entrypoint",
             "hybrid_bm25_dense_rrf",
@@ -120,6 +124,8 @@ def health():
             "usage_and_cost_tracking",
             "model_fallback_and_routing",
             "agentic_multi_hop_search",
+            "table_extraction",
+            "background_ingestion_jobs",
         ],
     }
 
@@ -224,59 +230,87 @@ def prometheus_metrics():
     return PlainTextResponse(metrics.render(), media_type="text/plain; version=0.0.4")
 
 
-@app.post("/api/v1/documents/upload", response_model=IngestResponse, dependencies=[Depends(require_api_key)])
-async def upload_documents(files: List[UploadFile] = File(...)):
-    """Ingest .pdf/.txt/.md files into Chroma + BM25. Re-uploading a filename replaces its old chunks."""
+async def _save_uploads(files: List[UploadFile]):
+    """Save valid uploads under random names in a new temp dir. Returns (dir, paths, names, rejected)."""
     max_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
     temp_dir = tempfile.mkdtemp(prefix="halo_upload_")
     saved_paths, source_names, rejected = [], [], []
-    try:
-        for file in files:
-            try:
-                name = safe_filename(file.filename)
-            except ValueError as e:
-                rejected.append(f"{file.filename}: {e}")
-                continue
-
-            # Saved under a random name inside temp_dir; the clean name is only used as metadata.
-            path = os.path.join(temp_dir, f"{uuid.uuid4().hex}{os.path.splitext(name)[1].lower()}")
-            size = 0
-            too_big = False
-            with open(path, "wb") as out:
-                while chunk := await file.read(1024 * 1024):
-                    size += len(chunk)
-                    if size > max_bytes:
-                        too_big = True
-                        break
-                    out.write(chunk)
-            if too_big:
-                os.remove(path)
-                rejected.append(f"{name}: larger than {settings.MAX_UPLOAD_MB} MB")
-                continue
-            saved_paths.append(path)
-            source_names.append(name)
-
-        if not saved_paths:
-            raise HTTPException(status_code=400, detail={"message": "No valid files uploaded", "rejected": rejected})
-
+    for file in files:
         try:
-            num_docs, num_chunks = await run_in_threadpool(ingest_file_list, saved_paths, source_names)
-        except Exception:
-            logger.exception("Ingestion failed")
-            raise HTTPException(status_code=500, detail="Failed to ingest files. Check server logs.") from None
+            name = safe_filename(file.filename)
+        except ValueError as e:
+            rejected.append(f"{file.filename}: {e}")
+            continue
 
-        # New or replaced documents can change answers: drop cached ones.
-        await run_in_threadpool(semantic_cache.clear)
+        # Saved under a random name inside temp_dir; the clean name is only used as metadata.
+        path = os.path.join(temp_dir, f"{uuid.uuid4().hex}{os.path.splitext(name)[1].lower()}")
+        size = 0
+        too_big = False
+        with open(path, "wb") as out:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > max_bytes:
+                    too_big = True
+                    break
+                out.write(chunk)
+        if too_big:
+            os.remove(path)
+            rejected.append(f"{name}: larger than {settings.MAX_UPLOAD_MB} MB")
+            continue
+        saved_paths.append(path)
+        source_names.append(name)
+    return temp_dir, saved_paths, source_names, rejected
 
-        return IngestResponse(
-            status="success",
-            message=f"Ingested {num_docs} page(s) into {num_chunks} chunks.",
-            total_documents=num_docs,
-            total_chunks=num_chunks,
-            rejected_files=rejected,
-        )
+
+@app.post("/api/v1/documents/upload", dependencies=[Depends(require_api_key)],
+          responses={200: {"model": IngestResponse}, 202: {"model": JobResponse}})
+async def upload_documents(files: List[UploadFile] = File(...), background: bool = False):
+    """Index .pdf/.txt/.md files and images (OCR). Re-uploading a filename replaces its old chunks.
+
+    With `?background=true` the call returns 202 at once with a job; poll `/api/v1/jobs/{id}`.
+    """
+    temp_dir, saved_paths, source_names, rejected = await _save_uploads(files)
+    if not saved_paths:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail={"message": "No valid files uploaded", "rejected": rejected})
+
+    if background:
+        job = ingestion_jobs.submit(saved_paths, source_names, cleanup_dir=temp_dir)
+        return JSONResponse(status_code=202, content={**job.to_dict(), "rejected_files": rejected})
+
+    try:
+        failed: List[str] = []
+        num_docs, num_chunks = await run_in_threadpool(
+            ingest_file_list, saved_paths, source_names,
+            lambda event, name, info=None: failed.append(f"{name}: {info}") if event == "failed" else None)
+    except Exception:
+        logger.exception("Ingestion failed")
+        raise HTTPException(status_code=500, detail="Failed to ingest files. Check server logs.") from None
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+    # New or replaced documents can change answers: drop cached ones.
+    await run_in_threadpool(semantic_cache.clear)
+    return IngestResponse(
+        status="success",
+        message=f"Ingested {num_docs} page(s) into {num_chunks} chunks.",
+        total_documents=num_docs,
+        total_chunks=num_chunks,
+        rejected_files=rejected + failed,
+    )
+
+
+@app.get("/api/v1/jobs/{job_id}", response_model=JobResponse, dependencies=[Depends(require_api_key)])
+def get_job(job_id: str):
+    job = ingestion_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="No such job (jobs are kept in memory for this server process)")
+    return job.to_dict()
+
+
+@app.get("/api/v1/jobs", response_model=List[JobResponse], dependencies=[Depends(require_api_key)])
+def list_jobs():
+    return [j.to_dict() for j in ingestion_jobs.recent()]
 
 
 @app.get("/api/v1/documents", response_model=DocumentList, dependencies=[Depends(require_api_key)])

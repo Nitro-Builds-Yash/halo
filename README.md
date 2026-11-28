@@ -72,6 +72,10 @@
   </tr>
   <tr>
     <td valign="top">
+      <h3>📄 Tables & scanned files</h3>
+      PDF tables are indexed as real rows and columns, and scanned pages and images are read with OCR (Tesseract), so nothing in your documents is invisible to search.
+    </td>
+    <td valign="top">
       <h3>🧰 Three ways in</h3>
       A <code>halo</code> CLI, a Streamlit app with document management, and a FastAPI server with streaming (SSE).
     </td>
@@ -79,6 +83,8 @@
       <h3>🏠 Runs locally</h3>
       Works with OpenAI or any OpenAI-compatible server (Ollama, vLLM, LM Studio), so you can keep everything on your machine.
     </td>
+  </tr>
+  <tr>
     <td valign="top">
       <h3>🛡️ Built for production</h3>
       Prompt-injection guard, per-answer token and cost tracking with a spend limit, model fallback and routing, Prometheus metrics, LangSmith tracing, Docker and CI.
@@ -269,7 +275,7 @@ Keyword queries are about **60× faster**. Set `HALO_NATIVE=0` to use the Python
 
 ### Web app
 
-`halo serve` (or Docker) serves the web app at **http://localhost:8000**. You can chat with follow-ups, drag in documents, watch each pipeline step live, hover a sentence to see its source, and open citations at the right PDF page. It has light and dark themes.
+`halo serve` (or Docker) serves the web app at **http://localhost:8000**. You can chat with follow-ups, pick up recent conversations from the sidebar, drag in documents (with an indexing progress bar), watch each pipeline step live, hover a sentence to see its source, and open citations at the right PDF page. It has light and dark themes.
 
 ### Command line
 
@@ -295,7 +301,8 @@ Keyword queries are about **60× faster**. Set `HALO_NATIVE=0` to use the Python
 | `GET` | `/metrics` | Prometheus metrics: requests by outcome, latency, tokens, cost, cache hits, injection flags, fallbacks |
 | `POST` | `/api/v1/query` | Answer a question (semantic cache first) |
 | `POST` | `/api/v1/chat/stream` | Server-Sent Events: one status event per step, then the final verified answer |
-| `POST` | `/api/v1/documents/upload` | Upload `.pdf` / `.txt` / `.md` files (size-limited) |
+| `POST` | `/api/v1/documents/upload` | Upload `.pdf` / `.txt` / `.md` / images (size-limited). Add `?background=true` to get a job back at once |
+| `GET` | `/api/v1/jobs/{id}` | Progress of a background upload: status, files done/total, current file, failures |
 | `GET` | `/api/v1/documents` | List indexed documents |
 | `GET` | `/api/v1/documents/{source}/file` | The original file; citation `url`s point here (with `#page=N` for PDFs) |
 | `DELETE` | `/api/v1/documents/{source}` | Remove a document from both indexes |
@@ -355,6 +362,7 @@ All settings live in `.env`; see [`.env.example`](./.env.example) for the full l
 | `CACHE_SIMILARITY` | `0.92` | How similar a question must be to reuse an answer |
 | `API_KEY` | – | Require `X-API-Key` on the API |
 | `CHROMA_HOST` | – | Use a Chroma server instead of local files |
+| `EXTRACT_TABLES` / `OCR` | `true` / `auto` | PDF tables as Markdown chunks; OCR for scanned pages and images when Tesseract is installed |
 | `LANGSMITH_TRACING` / `LANGSMITH_API_KEY` | `false` / – | Trace every step in LangSmith |
 
 ## 📊 Evaluation
@@ -423,7 +431,7 @@ Each release is listed on the [Releases page](https://github.com/Nitro-Builds-Ya
 - [x] Rust core: BM25, tokenizer, evidence scoring, rank fusion, `haloctl`
 - [x] Built-in web app
 - [x] Prompt-injection guard, cost tracking, model fallback/routing, multi-hop search
-- [ ] Table extraction and OCR for scanned PDFs
+- [x] Table extraction, OCR for scanned PDFs and images, background uploads with progress, saved conversations
 
 ## 📄 License
 

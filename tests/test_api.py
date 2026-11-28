@@ -24,7 +24,7 @@ def test_health(client):
 def test_upload_strips_path_traversal(client, monkeypatch):
     captured = {}
 
-    def fake_ingest(paths, names):
+    def fake_ingest(paths, names, progress=None):
         captured["paths"], captured["names"] = paths, names
         return 1, 3
 
@@ -197,3 +197,58 @@ def test_health_reports_ai_settings(client):
     assert set(h["models"]) == {"main", "fast", "fallback"}
     assert h["injection_guard"] in ("sanitize", "flag", "off")
     assert "prompt_injection_guard" in h["features"]
+
+
+def test_background_upload_job(client, monkeypatch):
+    import time
+
+    from halo.rag.jobs import JobRegistry
+
+    def slow_ingest(paths, names, progress=None):
+        for n in names:
+            progress("start", n)
+            time.sleep(0.05)
+            progress("failed" if n == "bad.txt" else "done", n, "no text found")
+        return 2, 7
+
+    cleared = []
+    registry = JobRegistry(slow_ingest, on_finish=lambda: cleared.append(True))
+    monkeypatch.setattr(server, "ingestion_jobs", registry)
+    files = [("files", ("a.txt", b"hello", "text/plain")), ("files", ("bad.txt", b"x", "text/plain")),
+             ("files", ("evil.exe", b"x", "application/octet-stream"))]
+    r = client.post("/api/v1/documents/upload?background=true", files=files)
+    assert r.status_code == 202
+    job = r.json()
+    assert job["status"] in ("queued", "running") and job["total"] == 2
+    assert job["rejected_files"] and "evil.exe" in job["rejected_files"][0]
+
+    done = registry.wait(job["id"], timeout=5)
+    assert done.status == "done" and done.chunks == 7
+    polled = client.get(f"/api/v1/jobs/{job['id']}").json()
+    assert polled["progress"] == 1.0 and polled["failed_files"] == ["bad.txt: no text found"]
+    assert cleared, "semantic cache must be cleared after a successful job"
+    assert client.get("/api/v1/jobs").json()[0]["id"] == job["id"]
+    assert client.get("/api/v1/jobs/nope").status_code == 404
+
+
+def test_background_job_failure_hides_details(client, monkeypatch):
+    from halo.rag.jobs import JobRegistry
+
+    def broken(paths, names, progress=None):
+        raise RuntimeError("Incorrect API key provided: sk-secret")
+
+    registry = JobRegistry(broken)
+    monkeypatch.setattr(server, "ingestion_jobs", registry)
+    r = client.post("/api/v1/documents/upload?background=true", files={"files": ("a.txt", b"hi", "text/plain")})
+    done = registry.wait(r.json()["id"], timeout=5)
+    assert done.status == "failed" and "sk-secret" not in done.error and "RuntimeError" in done.error
+
+
+def test_sync_upload_reports_unreadable_files(client, monkeypatch):
+    def ingest(paths, names, progress=None):
+        progress("failed", names[0], "no text found")
+        return 0, 0
+
+    monkeypatch.setattr(server, "ingest_file_list", ingest)
+    r = client.post("/api/v1/documents/upload", files={"files": ("scan.png", b"x", "image/png")})
+    assert r.status_code == 200 and r.json()["rejected_files"] == ["scan.png: no text found"]
