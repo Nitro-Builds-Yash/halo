@@ -2,18 +2,19 @@ import argparse
 import hashlib
 import os
 import shutil
-from typing import List, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from halo.core.config import settings
 from halo.core.log import get_logger
+from halo.rag.extract import IMAGE_EXTENSIONS, extract_pdf_tables, ocr_available, ocr_image, ocr_pdf_page
 from halo.rag.vectorstore import get_bm25_index, get_vectorstore
 
 logger = get_logger(__name__)
 
-SUPPORTED_EXTENSIONS = (".pdf", ".txt", ".md")
+SUPPORTED_EXTENSIONS = (".pdf", ".txt", ".md") + IMAGE_EXTENSIONS
 
 
 def chunk_id(source: str, page, index: int, content: str) -> str:
@@ -33,7 +34,8 @@ def _read_text(path: str) -> str:
 
 
 def load_file_with_metadata(file_path: str, source_name: str | None = None) -> List[Document]:
-    """Load a .pdf / .txt / .md file into one Document per page (one for text files)."""
+    """Load a file into Documents: one per PDF page (plus one per PDF table), one per text file,
+    one per image (via OCR). Scanned PDF pages are OCR'd when Tesseract is available."""
     ext = os.path.splitext(file_path)[1].lower()
     source = source_name or os.path.basename(file_path)
 
@@ -41,11 +43,34 @@ def load_file_with_metadata(file_path: str, source_name: str | None = None) -> L
         from pypdf import PdfReader
 
         docs = []
+        scanned = 0
+        tables = extract_pdf_tables(file_path)
         for number, page in enumerate(PdfReader(file_path).pages, start=1):  # 1-based, as readers see it
             text = (page.extract_text() or "").strip()
+            meta = {"source": source, "page": number}
+            if len(text) < settings.OCR_MIN_CHARS:
+                if ocr_available():
+                    try:
+                        ocr_text = ocr_pdf_page(file_path, number).strip()
+                    except Exception:
+                        logger.exception("OCR failed on %s page %d", source, number)
+                        ocr_text = ""
+                    if len(ocr_text) > len(text):
+                        text, meta = ocr_text, {**meta, "ocr": True}
+                else:
+                    scanned += 1
             if text:
-                docs.append(Document(page_content=text, metadata={"source": source, "page": number}))
+                docs.append(Document(page_content=text, metadata=meta))
+            for i, md in enumerate(tables.get(number, []), start=1):  # tables right after their page
+                docs.append(Document(page_content=f"Table {i} on page {number}:\n\n{md}",
+                                     metadata={"source": source, "page": number, "content_type": "table"}))
+        if scanned:
+            logger.warning("%s: %d page(s) have no text layer and OCR is unavailable (install Tesseract)",
+                           source, scanned)
         return docs
+    if ext in IMAGE_EXTENSIONS:
+        text = ocr_image(file_path).strip()
+        return [Document(page_content=text, metadata={"source": source, "page": 1, "ocr": True})] if text else []
     if ext in (".txt", ".md"):
         text = _read_text(file_path)
         return [Document(page_content=text, metadata={"source": source, "page": 1})] if text.strip() else []
@@ -95,12 +120,15 @@ def _remove_stored_file(source: str) -> None:
         logger.exception("Could not remove the stored copy of %s", source)
 
 
-def ingest_file_list(file_paths: List[str], source_names: List[str] | None = None) -> Tuple[int, int]:
+def ingest_file_list(file_paths: List[str], source_names: List[str] | None = None,
+                     progress: Optional[Callable[..., None]] = None) -> Tuple[int, int]:
     """Ingest files into Chroma and BM25 with shared chunk IDs.
 
     Re-uploading a file with the same name replaces its previous chunks instead of
-    duplicating them.
+    duplicating them. `progress(event, source, info=None)` is called with "start" before
+    each file and "done" or "failed" after it (used by background jobs).
     """
+    progress = progress or (lambda *a, **k: None)
     source_names = source_names or [os.path.basename(p) for p in file_paths]
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=settings.CHUNK_SIZE,
@@ -113,14 +141,17 @@ def ingest_file_list(file_paths: List[str], source_names: List[str] | None = Non
     bm25 = get_bm25_index()
 
     for path, source in zip(file_paths, source_names):
+        progress("start", source)
         try:
             docs = load_file_with_metadata(path, source)
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to load %s", path)
+            progress("failed", source, str(e)[:200] if isinstance(e, (RuntimeError, ValueError)) else "could not be read")
             continue
 
         splits = splitter.split_documents(docs)
         if not splits:
+            progress("failed", source, "no text found (a scanned file needs OCR: install Tesseract)")
             continue
 
         ids, seen = [], set()
@@ -145,6 +176,7 @@ def ingest_file_list(file_paths: List[str], source_names: List[str] | None = Non
         total_docs += len(docs)
         total_chunks += len(unique_splits)
         logger.info("Ingested %s: %d page(s), %d chunk(s)", source, len(docs), len(unique_splits))
+        progress("done", source)
 
     return total_docs, total_chunks
 

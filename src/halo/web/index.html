@@ -32,17 +32,26 @@
         New conversation
       </button>
 
+      <section class="recent" id="recent" hidden>
+        <div class="section-title"><span>Recent</span></div>
+        <ul class="conv-list" id="convList"></ul>
+      </section>
+
       <section class="docs">
         <div class="section-title">
           <span>Documents</span>
           <span class="count" id="docCount">0</span>
         </div>
         <label class="dropzone" id="dropzone">
-          <input type="file" id="fileInput" multiple accept=".pdf,.txt,.md" hidden>
+          <input type="file" id="fileInput" multiple accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.tif,.tiff,.webp" hidden>
           <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 16V4m0 0l-4 4m4-4l4 4M5 16v2a2 2 0 002 2h10a2 2 0 002-2v-2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span><b>Drop files</b> or click to upload</span>
-          <small>PDF, TXT, Markdown</small>
+          <small>PDF, TXT, Markdown, images (OCR)</small>
         </label>
+        <div class="upload-progress" id="uploadProgress" hidden>
+          <div class="up-row"><span class="up-label">Uploading…</span><span class="up-count"></span></div>
+          <div class="bar"><span></span></div>
+        </div>
         <ul class="doc-list" id="docList"></ul>
       </section>
 

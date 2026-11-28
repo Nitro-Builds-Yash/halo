@@ -4,7 +4,8 @@
 
   const $ = (id) => document.getElementById(id);
   const chat = $("chat"), input = $("input"), sendBtn = $("sendBtn");
-  const state = { history: [], busy: false, key: load("halo.apiKey") || "" };
+  const state = { history: [], turns: [], convId: null, busy: false, key: load("halo.apiKey") || "" };
+  const CONV_KEY = "halo.conversations", MAX_CONVS = 30;
 
   const STEP_LABELS = {
     condense: "Understanding follow-up", cache: "Cache hit", decompose_query: "Planning",
@@ -119,6 +120,17 @@
     refreshDocs();
   }
 
+  function showProgress(job) {
+    const box = $("uploadProgress");
+    if (!job) { box.hidden = true; return; }
+    box.hidden = false;
+    const pct = Math.round((job.progress || 0) * 100);
+    box.querySelector(".bar span").style.width = `${Math.max(pct, 4)}%`;
+    box.querySelector(".up-label").textContent = job.current
+      ? `Indexing ${job.current}` : job.status === "queued" ? "Waiting to start…" : "Finishing…";
+    box.querySelector(".up-count").textContent = `${job.done}/${job.total}`;
+  }
+
   async function upload(files) {
     if (!files.length) return;
     const dz = $("dropzone");
@@ -126,17 +138,94 @@
     const form = new FormData();
     for (const f of files) form.append("files", f);
     try {
-      const r = await fetch("/api/v1/documents/upload", { method: "POST", headers: headers(), body: form });
+      const r = await fetch("/api/v1/documents/upload?background=true", { method: "POST", headers: headers(), body: form });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : data.detail?.message || `Upload failed (${r.status})`);
-      toast(data.message || "Uploaded", "ok");
       (data.rejected_files || []).forEach((m) => toast(m, "err"));
+      let job = data;
+      if (r.status === 202) {
+        showProgress(job);
+        while (job.status === "queued" || job.status === "running") {
+          await new Promise((res) => setTimeout(res, 700));
+          const p = await fetch(`/api/v1/jobs/${job.id}`, { headers: headers() });
+          if (!p.ok) break;
+          job = await p.json();
+          showProgress(job);
+          if (job.done) refreshDocs();
+        }
+        (job.failed_files || []).forEach((m) => toast(m, "err"));
+        if (job.status === "failed") throw new Error(job.error || "Indexing failed");
+        toast(`Indexed ${job.files.length - (job.failed_files || []).length} file(s): ${job.pages} page(s), ${job.chunks} chunks`, "ok");
+      } else {
+        toast(data.message || "Uploaded", "ok");
+      }
     } catch (e) {
       toast(e.message, "err");
     } finally {
+      showProgress(null);
       dz.classList.remove("busy");
       refreshDocs();
     }
+  }
+
+  // ---------- saved conversations (this browser only) ----------
+  function loadConvs() { try { return JSON.parse(load(CONV_KEY) || "[]"); } catch { return []; } }
+  function saveConvs(list) { save(CONV_KEY, JSON.stringify(list.slice(0, MAX_CONVS))); }
+
+  function persistConversation() {
+    if (!state.turns.length) return;
+    const list = loadConvs().filter((c) => c.id !== state.convId);
+    const title = state.turns.find((t) => t.role === "user")?.text || "Conversation";
+    list.unshift({ id: state.convId, title: title.slice(0, 80), updated: Date.now(), turns: state.turns });
+    saveConvs(list);
+    renderConvList();
+  }
+
+  function timeAgo(ts) {
+    const s = (Date.now() - ts) / 1000;
+    if (s < 60) return "just now";
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    return `${Math.floor(s / 86400)}d ago`;
+  }
+
+  function renderConvList() {
+    const list = loadConvs(), ul = $("convList");
+    $("recent").hidden = !list.length;
+    ul.innerHTML = "";
+    for (const c of list) {
+      const li = el("li", `conv${c.id === state.convId ? " active" : ""}`);
+      li.innerHTML = `<button class="conv-open"><span class="conv-title"></span><span class="conv-time">${timeAgo(c.updated)}</span></button>
+        <button class="conv-del" title="Delete conversation" aria-label="Delete conversation">×</button>`;
+      li.querySelector(".conv-title").textContent = c.title;
+      li.querySelector(".conv-open").addEventListener("click", () => openConversation(c.id));
+      li.querySelector(".conv-del").addEventListener("click", () => {
+        saveConvs(loadConvs().filter((x) => x.id !== c.id));
+        if (c.id === state.convId) newChat(); else renderConvList();
+      });
+      ul.appendChild(li);
+    }
+  }
+
+  function openConversation(id) {
+    const c = loadConvs().find((x) => x.id === id);
+    if (!c || state.busy) return;
+    chat.innerHTML = "";
+    state.convId = c.id;
+    state.turns = c.turns;
+    state.history = [];
+    $("topbarTitle").textContent = c.title;
+    for (const t of c.turns) {
+      if (t.role === "user") { addUser(t.text); state.history.push({ role: "user", content: t.text }); }
+      else {
+        const bot = addBot();
+        bot.querySelector(".steps").remove();
+        renderAnswer(bot.querySelector(".card"), t.msg);
+        state.history.push({ role: "assistant", content: t.msg.content || "" });
+      }
+    }
+    renderConvList();
+    $("sidebar").classList.remove("open");
   }
 
   // ---------- rendering an answer ----------
@@ -315,6 +404,9 @@
       if (!answer) throw new Error("The stream ended without an answer.");
       renderAnswer(card, answer);
       state.history.push({ role: "user", content: question }, { role: "assistant", content: answer.content || "" });
+      if (!state.convId) state.convId = `c${Date.now().toString(36)}`;
+      state.turns.push({ role: "user", text: question }, { role: "bot", msg: answer });
+      persistConversation();
     } catch (e) {
       steps.querySelector(".step.active")?.classList.replace("active", "warn");
       card.className = "card error-card";
@@ -329,6 +421,9 @@
 
   function newChat() {
     state.history = [];
+    state.turns = [];
+    state.convId = null;
+    renderConvList();
     chat.innerHTML = "";
     const tpl = document.createElement("template");
     tpl.innerHTML = emptyHtml;
@@ -379,6 +474,7 @@
   });
 
   bindSuggestions();
+  renderConvList();
   refreshHealth();
   refreshDocs();
   input.focus();

@@ -66,3 +66,20 @@ class DeleteResponse(BaseModel):
     status: str
     source: str
     chunks_removed: int
+
+
+class JobResponse(BaseModel):
+    id: str
+    status: str = Field(description="queued | running | done | failed")
+    files: List[str]
+    total: int
+    done: int
+    progress: float = Field(description="0.0 to 1.0")
+    current: Optional[str] = None
+    pages: int = 0
+    chunks: int = 0
+    failed_files: List[str] = Field(default_factory=list)
+    rejected_files: List[str] = Field(default_factory=list)
+    error: Optional[str] = None
+    created_at: float
+    finished_at: Optional[float] = None

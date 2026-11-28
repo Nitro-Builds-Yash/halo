@@ -9,6 +9,7 @@
     { source: "vendor-faq.pdf", chunks: 18, pages: 6 },
   ];
 
+  const JOBS = {};
   const src = (source, page, snippet) => ({ source, page, snippet, url: null });
 
   const ANSWERS = [
@@ -90,7 +91,24 @@
       return json({ status: "ok", version: "demo", keyword_backend: "rust (halo-native, demo)" });
     }
     if (path.startsWith("/api/v1/documents/upload")) {
-      return json({ detail: "Uploads are disabled in the demo. Run halo yourself to index your own files." }, 400);
+      // Simulated background job: shows the real progress UI, then lists the file (nothing is read or stored).
+      const names = [...(init.body?.getAll?.("files") || [])].map((f) => f.name).filter(Boolean);
+      const id = `demo${Date.now()}`;
+      JOBS[id] = { id, files: names, total: names.length, done: 0, status: "running", pages: 0, chunks: 0,
+                   failed_files: [], started: Date.now() };
+      return json({ ...JOBS[id], progress: 0, current: names[0] || null, rejected_files: [] }, 202);
+    }
+    if (path.startsWith("/api/v1/jobs/")) {
+      const job = JOBS[path.split("/").pop()];
+      if (!job) return json({ detail: "No such job" }, 404);
+      const done = Math.min(job.total, Math.floor((Date.now() - job.started) / 1200));
+      job.done = done;
+      if (done >= job.total && job.status === "running") {
+        job.status = "done";
+        job.files.forEach((n) => { if (!DOCS.some((d) => d.source === n)) DOCS.push({ source: n, chunks: 12, pages: 3 }); });
+        job.pages = 3 * job.total; job.chunks = 12 * job.total;
+      }
+      return json({ ...job, progress: job.total ? done / job.total : 1, current: job.status === "running" ? job.files[done] : null });
     }
     if (path.startsWith("/api/v1/documents") && (init.method || "GET") === "DELETE") {
       return json({ detail: "The demo's sample documents can't be removed." }, 400);
@@ -109,7 +127,7 @@
   window.addEventListener("DOMContentLoaded", () => {
     const bar = document.createElement("div");
     bar.className = "demo-ribbon";
-    bar.innerHTML = 'Live demo with sample data and canned answers · <a href="https://github.com/Nitro-Builds-Yash/halo#-quickstart">Run halo on your own documents →</a>';
+    bar.innerHTML = 'Live demo with sample data and canned answers (uploads are simulated) · <a href="https://github.com/Nitro-Builds-Yash/halo#-quickstart">Run halo on your own documents →</a>';
     document.body.prepend(bar);
     const s = document.querySelectorAll(".suggestion");
     const prompts = ["What is the refund window?", "How long does shipping take?",
